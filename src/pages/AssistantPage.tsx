@@ -1,8 +1,7 @@
-import { useState, useMemo } from 'react';
-import { getMockData } from '@/data/mockState';
+import { useState } from 'react';
 import { useFilter } from '@/contexts/FilterContext';
-import { computeKpis, filterByDateRange, fmt$, fmtN, fmtP } from '@/services/metrics';
-import { getUnmappedLeads } from '@/services/attribution';
+import { useAssistantContext } from '@/hooks/useApi';
+import { fmt$, fmtN, fmtP } from '@/lib/format';
 import { Bot, Send, Lightbulb, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -16,26 +15,15 @@ const suggestions = [
 
 export default function AssistantPage() {
   const { startDate, endDate, locations } = useFilter();
-  const data = getMockData();
   const navigate = useNavigate();
   const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; text: string }[]>([]);
   const [input, setInput] = useState('');
 
-  const filtered = useMemo(() => {
-    let leads = filterByDateRange(data.leads, 'created_date', startDate, endDate);
-    let spend = filterByDateRange(data.spend, 'date', startDate, endDate);
-    if (locations.length > 0) {
-      leads = leads.filter(l => locations.includes(l.location));
-      spend = spend.filter(s => locations.includes(s.location));
-    }
-    const leadIds = new Set(leads.map(l => l.id));
-    const deals = data.deals.filter(d => leadIds.has(d.lead_id));
-    return { leads, deals, spend };
-  }, [data, startDate, endDate, locations]);
+  const { data: ctx, isLoading } = useAssistantContext({ startDate, endDate, locations });
 
-  const kpis = useMemo(() => computeKpis(filtered.leads, filtered.deals, filtered.spend), [filtered]);
-  const unmapped = useMemo(() => getUnmappedLeads(filtered.leads, data.mappingRules), [filtered, data]);
-  const wonDeals = filtered.deals.filter(d => d.status === 'won');
+  if (isLoading || !ctx) return <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>;
+
+  const { kpis, unmappedCount, wonDealsCount } = ctx;
 
   const generateResponse = (q: string): string => {
     const ql = q.toLowerCase();
@@ -43,13 +31,13 @@ export default function AssistantPage() {
       return `📊 **Best ROAS Channel (${startDate} to ${endDate})**\n\nGoogle Search is your top performer with approximately ${kpis.roas.toFixed(1)}x ROAS overall. With ${fmt$(kpis.spend)} total spend generating ${fmt$(kpis.revenue)} revenue across ${kpis.dealsWon} won deals.\n\n**Recommendation:** Consider increasing Google Search budget by 15-20% while maintaining current CPL targets.`;
     }
     if (ql.includes('cpl') || ql.includes('cost per lead')) {
-      return `📈 **CPL Analysis**\n\nCurrent CPL: ${fmt$(kpis.cpl)} across ${fmtN(kpis.leads)} leads.\n\nCPL has been ${kpis.cpl > 80 ? 'elevated' : 'within target range'}. Key factors:\n- ${filtered.spend.length} spend entries in period\n- ${unmapped.length} unmapped leads (fix tracking!)\n- Meta ads showing higher CPL than Google\n\n**Action:** Review Facebook campaign targeting and pause underperforming ad sets.`;
+      return `📈 **CPL Analysis**\n\nCurrent CPL: ${fmt$(kpis.cpl)} across ${fmtN(kpis.leads)} leads.\n\nCPL has been ${kpis.cpl > 80 ? 'elevated' : 'within target range'}. Key factors:\n- ${ctx.totalSpendEntries} spend entries in period\n- ${unmappedCount} unmapped leads (fix tracking!)\n- Meta ads showing higher CPL than Google\n\n**Action:** Review Facebook campaign targeting and pause underperforming ad sets.`;
     }
     if (ql.includes('cut') || ql.includes('scale')) {
       return `⚡ **Scale & Cut Recommendations**\n\n🟢 **Scale:** Google Search PPC — strong ROAS, proven conversion\n🟢 **Scale:** Referral program — lowest CPL, high close rate\n🔴 **Cut/Pause:** Any campaign with <1.5x ROAS after 30 days\n🟡 **Watch:** Direct mail — evaluate Feb EDDM results before next drop\n\nTotal spend: ${fmt$(kpis.spend)} | Revenue: ${fmt$(kpis.revenue)} | GP Est: ${fmt$(kpis.grossProfit)}`;
     }
     if (ql.includes('recap') || ql.includes('weekly')) {
-      return `📋 **Weekly Marketing Recap**\n\n**Period:** ${startDate} to ${endDate}\n\n| Metric | Value |\n|--------|-------|\n| Spend | ${fmt$(kpis.spend)} |\n| Leads | ${fmtN(kpis.leads)} |\n| CPL | ${fmt$(kpis.cpl)} |\n| Appointments | ${fmtN(kpis.appointments)} |\n| Deals Won | ${fmtN(kpis.dealsWon)} |\n| Revenue | ${fmt$(kpis.revenue)} |\n| ROAS | ${kpis.roas.toFixed(1)}x |\n| Close Rate | ${fmtP(kpis.closeRate)} |\n\n**Key Wins:** ${wonDeals.length} deals closed for ${fmt$(kpis.revenue)}\n**Watch:** ${unmapped.length} unmapped leads need attribution`;
+      return `📋 **Weekly Marketing Recap**\n\n**Period:** ${startDate} to ${endDate}\n\n| Metric | Value |\n|--------|-------|\n| Spend | ${fmt$(kpis.spend)} |\n| Leads | ${fmtN(kpis.leads)} |\n| CPL | ${fmt$(kpis.cpl)} |\n| Appointments | ${fmtN(kpis.appointments)} |\n| Deals Won | ${fmtN(kpis.dealsWon)} |\n| Revenue | ${fmt$(kpis.revenue)} |\n| ROAS | ${kpis.roas.toFixed(1)}x |\n| Close Rate | ${fmtP(kpis.closeRate)} |\n\n**Key Wins:** ${wonDealsCount} deals closed for ${fmt$(kpis.revenue)}\n**Watch:** ${unmappedCount} unmapped leads need attribution`;
     }
     if (ql.includes('agenda') || ql.includes('mansfield')) {
       return `📅 **Proposed Web Agenda: Mansfield Retail Focus**\n\n**Theme:** Spring Roofing Season — Mansfield Blitz\n**Offer:** Free Estimate + $500 Off New Roof\n**Target:** Mansfield residential homeowners\n\n**Budget:**\n- Google Search: $2,500\n- Facebook: $1,200\n- Direct Mail (EDDM): $800\n- Yard Signs: $200\n\n**KPI Targets:** 35 leads | $75 CPL | $80K revenue\n\n**Talking Points:**\n1. Spring storm damage assessment\n2. Limited-time financing at 0%\n3. 5-star Google reviews\n4. Local veteran-owned business`;
@@ -68,7 +56,7 @@ export default function AssistantPage() {
   const recommendations = [
     { label: 'Scale Winners', desc: 'Increase Google Search budget — best ROAS channel', color: 'text-status-green', link: '/performance' },
     { label: 'Pause Losers', desc: `Review campaigns with <1.5x ROAS`, color: 'text-status-red', link: '/performance' },
-    { label: 'Fix Tracking', desc: `${unmapped.length} unmapped leads need source attribution`, color: 'text-status-yellow', link: '/sources?tab=unmapped' },
+    { label: 'Fix Tracking', desc: `${unmappedCount} unmapped leads need source attribution`, color: 'text-status-yellow', link: '/sources?tab=unmapped' },
     { label: 'Rep Coaching', desc: `Close rate at ${fmtP(kpis.closeRate)} — review bottom performers`, color: 'text-primary', link: '/pipeline?tab=deals' },
   ];
 
@@ -114,7 +102,6 @@ export default function AssistantPage() {
             </button>
           </div>
         </div>
-
         <div className="space-y-3">
           <div className="bg-card rounded-lg border border-border p-4">
             <h3 className="text-xs font-semibold mb-3 flex items-center gap-1.5"><Lightbulb size={13} className="text-accent" /> Action Recommendations</h3>

@@ -1,19 +1,19 @@
-import { useMemo } from 'react';
 import { useFilter } from '@/contexts/FilterContext';
-import { getMockData } from '@/data/mockState';
-import { getAnalyticsKPIs, computeFunnel, getTopPages, getUTMPerformance } from '@/services/analytics';
+import { useAnalyticsKPIs, useFunnel, useTopPages, useUTMPerformance } from '@/hooks/useApi';
 import { KpiCard } from '@/components/shared/KpiCard';
-import { fmtN } from '@/services/metrics';
+import { fmtN } from '@/lib/format';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 export default function AnalyticsPage() {
   const { startDate, endDate, locations } = useFilter();
-  const data = getMockData();
+  const f = { startDate, endDate, locations };
 
-  const kpis = useMemo(() => getAnalyticsKPIs(data, startDate, endDate, locations), [data, startDate, endDate, locations]);
-  const funnel = useMemo(() => computeFunnel(data, startDate, endDate, locations), [data, startDate, endDate, locations]);
-  const topPages = useMemo(() => getTopPages(data, startDate, endDate, locations), [data, startDate, endDate, locations]);
-  const utmPerf = useMemo(() => getUTMPerformance(data, startDate, endDate, locations), [data, startDate, endDate, locations]);
+  const { data: kpis, isLoading: k } = useAnalyticsKPIs(f);
+  const { data: funnel, isLoading: fu } = useFunnel(f);
+  const { data: topPages, isLoading: tp } = useTopPages(f);
+  const { data: utmPerf, isLoading: up } = useUTMPerformance(f);
+
+  if (k || !kpis || fu || !funnel) return <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>;
 
   const cards = [
     { label: 'Sessions', value: fmtN(kpis.sessions) },
@@ -31,12 +31,9 @@ export default function AnalyticsPage() {
         <h2 className="text-lg font-bold">Analytics</h2>
         <p className="text-xs text-muted-foreground">Website tracking — sessions, events, funnels</p>
       </div>
-
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2.5">
         {cards.map(c => <KpiCard key={c.label} label={c.label} value={c.value} />)}
       </div>
-
-      {/* Funnel */}
       <div className="bg-card rounded-lg border border-border p-4">
         <h3 className="text-sm font-semibold mb-3">Conversion Funnel</h3>
         <div className="h-56">
@@ -60,9 +57,7 @@ export default function AnalyticsPage() {
           ))}
         </div>
       </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {/* Top Pages */}
         <div className="bg-card rounded-lg border border-border p-4">
           <h3 className="text-sm font-semibold mb-3">Top Pages</h3>
           <table className="w-full text-xs">
@@ -77,7 +72,7 @@ export default function AnalyticsPage() {
               </tr>
             </thead>
             <tbody>
-              {topPages.slice(0, 10).map(p => (
+              {(topPages || []).slice(0, 10).map(p => (
                 <tr key={p.url} className="border-b border-border/50 hover:bg-muted/30">
                   <td className="py-1.5 px-2 font-mono font-medium">{p.url}</td>
                   <td className="text-right py-1.5 px-2">{p.views}</td>
@@ -90,8 +85,6 @@ export default function AnalyticsPage() {
             </tbody>
           </table>
         </div>
-
-        {/* UTM Performance */}
         <div className="bg-card rounded-lg border border-border p-4">
           <h3 className="text-sm font-semibold mb-3">UTM Campaign Performance</h3>
           <table className="w-full text-xs">
@@ -105,7 +98,7 @@ export default function AnalyticsPage() {
               </tr>
             </thead>
             <tbody>
-              {utmPerf.slice(0, 10).map(u => (
+              {(utmPerf || []).slice(0, 10).map(u => (
                 <tr key={u.utm_campaign} className="border-b border-border/50 hover:bg-muted/30">
                   <td className="py-1.5 px-2 font-mono font-medium">{u.utm_campaign}</td>
                   <td className="text-right py-1.5 px-2">{u.sessions}</td>

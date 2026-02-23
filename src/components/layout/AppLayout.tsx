@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useFilter, DatePreset } from '@/contexts/FilterContext';
-import { resetMockData } from '@/data/mockState';
+import { useResetData } from '@/hooks/useApi';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, TrendingUp, Filter, Film, CalendarDays,
@@ -36,18 +36,21 @@ const allLocations = ['Mansfield', 'Sandusky', 'Huron'];
 export default function AppLayout() {
   const location = useLocation();
   const f = useFilter();
+  const resetData = useResetData();
 
-  const handleReset = () => { resetMockData(); window.location.reload(); };
+  const handleReset = () => {
+    resetData.mutate(undefined, {
+      onSuccess: () => window.location.reload(),
+    });
+  };
 
   return (
     <div className={cn('flex flex-col h-screen', f.tvMode && 'tv-mode')}>
-      {/* Demo banner */}
       <div className="bg-accent/10 text-center py-1 text-xs font-medium text-accent shrink-0 border-b border-accent/20">
         Demo Mode — Mock Data
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
         <aside className={cn(
           'shrink-0 border-r border-sidebar-border bg-sidebar flex flex-col transition-all duration-200',
           f.tvMode ? 'w-14' : 'w-48'
@@ -67,16 +70,13 @@ export default function AppLayout() {
               const active = location.pathname === item.path ||
                 (item.path !== '/' && location.pathname.startsWith(item.path));
               return (
-                <Link
-                  key={item.path}
-                  to={item.path}
+                <Link key={item.path} to={item.path}
                   className={cn(
                     'flex items-center gap-2 px-3 py-1.5 text-[12px] transition-colors',
                     active
                       ? 'bg-sidebar-accent text-sidebar-accent-foreground border-r-2 border-sidebar-primary font-medium'
                       : 'text-sidebar-foreground hover:bg-sidebar-accent/50'
-                  )}
-                >
+                  )}>
                   <item.icon size={14} className="shrink-0" />
                   {!f.tvMode && <span>{item.label}</span>}
                 </Link>
@@ -92,70 +92,39 @@ export default function AppLayout() {
           )}
         </aside>
 
-        {/* Main */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Top bar */}
           <header className="h-10 border-b border-border px-3 flex items-center gap-1 shrink-0 bg-card">
             {datePresets.map(p => (
-              <button
-                key={p.value}
-                onClick={() => f.setDatePreset(p.value)}
-                className={cn(
-                  'px-2 py-0.5 text-[10px] rounded font-medium transition-colors',
-                  f.datePreset === p.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'
-                )}
-              >
+              <button key={p.value} onClick={() => f.setDatePreset(p.value)}
+                className={cn('px-2 py-0.5 text-[10px] rounded font-medium transition-colors',
+                  f.datePreset === p.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary')}>
                 {p.label}
               </button>
             ))}
-
             <div className="w-px h-4 bg-border mx-0.5" />
-
-            <button
-              onClick={() => f.setLocations([])}
-              className={cn(
-                'px-2 py-0.5 text-[10px] rounded font-medium transition-colors',
-                f.locations.length === 0 ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'
-              )}
-            >
+            <button onClick={() => f.setLocations([])}
+              className={cn('px-2 py-0.5 text-[10px] rounded font-medium transition-colors',
+                f.locations.length === 0 ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary')}>
               All
             </button>
             {allLocations.map(loc => (
-              <button
-                key={loc}
-                onClick={() => f.setLocations(
-                  f.locations.includes(loc) ? f.locations.filter(l => l !== loc) : [...f.locations, loc]
-                )}
-                className={cn(
-                  'px-2 py-0.5 text-[10px] rounded font-medium transition-colors',
-                  f.locations.includes(loc) ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'
-                )}
-              >
+              <button key={loc} onClick={() => f.setLocations(f.locations.includes(loc) ? f.locations.filter(l => l !== loc) : [...f.locations, loc])}
+                className={cn('px-2 py-0.5 text-[10px] rounded font-medium transition-colors',
+                  f.locations.includes(loc) ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary')}>
                 {loc}
               </button>
             ))}
-
             <div className="flex-1" />
-
-            <button
-              onClick={() => f.setTvMode(!f.tvMode)}
-              className={cn(
-                'flex items-center gap-1 px-2 py-0.5 text-[10px] rounded font-medium transition-colors',
-                f.tvMode ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-secondary'
-              )}
-            >
-              <Monitor size={11} />
-              TV
+            <button onClick={() => f.setTvMode(!f.tvMode)}
+              className={cn('flex items-center gap-1 px-2 py-0.5 text-[10px] rounded font-medium transition-colors',
+                f.tvMode ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-secondary')}>
+              <Monitor size={11} /> TV
             </button>
-            <button
-              onClick={handleReset}
-              className="flex items-center gap-1 px-2 py-0.5 text-[10px] rounded font-medium text-muted-foreground hover:bg-secondary transition-colors"
-            >
-              <RotateCcw size={11} />
-              Reset
+            <button onClick={handleReset}
+              className="flex items-center gap-1 px-2 py-0.5 text-[10px] rounded font-medium text-muted-foreground hover:bg-secondary transition-colors">
+              <RotateCcw size={11} /> Reset
             </button>
           </header>
-
           <main className={cn('flex-1 overflow-auto', f.tvMode ? 'p-3' : 'p-4')}>
             <Outlet />
           </main>

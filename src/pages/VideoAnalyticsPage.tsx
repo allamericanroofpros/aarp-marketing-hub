@@ -1,18 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useFilter } from '@/contexts/FilterContext';
-import { getMockData } from '@/data/mockState';
-import { getVideoLeaderboard, getVideoAttrition, getInfluencedConversions } from '@/services/analytics';
-import { fmt$, fmtN } from '@/services/metrics';
+import { useVideoLeaderboard, useVideoAttrition, useInfluencedConversions } from '@/hooks/useApi';
+import { fmt$, fmtN } from '@/lib/format';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 export default function VideoAnalyticsPage() {
   const { startDate, endDate } = useFilter();
-  const data = getMockData();
   const [tab, setTab] = useState<'leaderboard' | 'attrition' | 'influenced'>('leaderboard');
 
-  const leaderboard = useMemo(() => getVideoLeaderboard(data, startDate, endDate), [data, startDate, endDate]);
-  const attrition = useMemo(() => getVideoAttrition(data), [data]);
-  const influenced = useMemo(() => getInfluencedConversions(data), [data]);
+  const { data: leaderboard = [], isLoading: ll } = useVideoLeaderboard({ startDate, endDate });
+  const { data: attrition = [], isLoading: al } = useVideoAttrition();
+  const { data: influenced = [], isLoading: il } = useInfluencedConversions();
+
+  const loading = (tab === 'leaderboard' && ll) || (tab === 'attrition' && al) || (tab === 'influenced' && il);
+  if (loading) return <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>;
 
   return (
     <div className="space-y-5">
@@ -20,7 +21,6 @@ export default function VideoAnalyticsPage() {
         <h2 className="text-lg font-bold">Video Analytics</h2>
         <p className="text-xs text-muted-foreground">Video engagement, attrition, and influenced conversions</p>
       </div>
-
       <div className="flex gap-1">
         {([
           { key: 'leaderboard', label: 'Leaderboard' },
@@ -94,7 +94,7 @@ export default function VideoAnalyticsPage() {
         <div className="bg-card rounded-lg border border-border p-4 overflow-x-auto">
           <h3 className="text-sm font-semibold mb-3">Video-Influenced Conversions</h3>
           {influenced.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No influenced conversions found in the current data.</p>
+            <p className="text-xs text-muted-foreground">No influenced conversions found.</p>
           ) : (
             <table className="w-full text-xs">
               <thead>
