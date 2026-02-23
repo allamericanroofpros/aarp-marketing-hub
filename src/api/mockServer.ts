@@ -326,26 +326,103 @@ export const mockServer = {
 
   /* ── Ingestion ── */
   ingestEvent(payload: any) {
+    const data = db.getData();
+    const now = new Date().toISOString();
+    const ts = payload.ts || now;
+    const anonId = payload.anonymous_id || 'unknown';
+    const dayKey = ts.split('T')[0];
+
+    // Ensure a session exists for this anonymous_id + day
+    let sessionId = payload.session_id;
+    if (!sessionId) {
+      const existing = data.sessions.find(
+        s => s.anonymous_id === anonId && s.started_at.split('T')[0] === dayKey
+      );
+      if (existing) {
+        sessionId = existing.id;
+        existing.ended_at = ts; // update last activity
+      } else {
+        sessionId = `sess-rt-${Date.now()}`;
+        data.sessions.push({
+          id: sessionId,
+          started_at: ts,
+          ended_at: ts,
+          anonymous_id: anonId,
+          contact_id: payload.contact_id,
+          landing_page: payload.props?.url || '/',
+          referrer: '',
+          utm_source: '',
+          utm_medium: '',
+          utm_campaign: '',
+          device: 'desktop',
+          location: 'Mansfield',
+        });
+      }
+    }
+
+    const event: any = {
+      id: `ev-rt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      ts,
+      session_id: sessionId,
+      anonymous_id: anonId,
+      contact_id: payload.contact_id,
+      name: payload.name,
+      props: payload.props || {},
+    };
+    data.events.push(event);
+    db.setData({ ...data });
+
     cache.invalidate('analyticsKPIs');
     cache.invalidate('funnel');
-    return { ok: true };
+    cache.invalidate('homeData');
+    return { ok: true, eventId: event.id, sessionId };
   },
+
   ingestVideoEvent(payload: any) {
+    const data = db.getData();
+    const ts = payload.ts || new Date().toISOString();
+    const anonId = payload.anonymous_id || 'unknown';
+
+    // Ensure session
+    let sessionId = payload.session_id;
+    if (!sessionId) {
+      const dayKey = ts.split('T')[0];
+      const existing = data.sessions.find(
+        s => s.anonymous_id === anonId && s.started_at.split('T')[0] === dayKey
+      );
+      sessionId = existing?.id || `sess-rt-${Date.now()}`;
+    }
+
+    const ve: any = {
+      id: `ve-rt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      ts,
+      video_id: payload.video_id,
+      session_id: sessionId,
+      anonymous_id: anonId,
+      contact_id: payload.contact_id,
+      name: payload.name,
+      props: payload.props || {},
+    };
+    data.videoEvents.push(ve);
+    db.setData({ ...data });
+
     cache.invalidate('videoLeaderboard');
-    return { ok: true };
+    return { ok: true, eventId: ve.id };
   },
+
   identifyContact(payload: { anonymous_id: string; contact_id: string; email?: string; phone?: string; name?: string }) {
     const data = db.getData();
     let contact = data.contacts.find(c => c.id === payload.contact_id);
+    const now = new Date().toISOString();
     if (!contact) {
       contact = {
         id: payload.contact_id,
-        created_at: new Date().toISOString(),
+        created_at: now,
         email: payload.email,
         phone: payload.phone,
         name: payload.name,
-        first_seen_at: new Date().toISOString(),
-        last_seen_at: new Date().toISOString(),
+        first_seen_at: now,
+        last_seen_at: now,
         lifecycle_stage: 'lead',
       };
       data.contacts.push(contact);
@@ -353,13 +430,17 @@ export const mockServer = {
       if (payload.email) contact.email = payload.email;
       if (payload.phone) contact.phone = payload.phone;
       if (payload.name) contact.name = payload.name;
-      contact.last_seen_at = new Date().toISOString();
+      contact.last_seen_at = now;
     }
+    // Stitch contact_id onto sessions, events, and videoEvents
     data.sessions.forEach(s => {
       if (s.anonymous_id === payload.anonymous_id && !s.contact_id) s.contact_id = payload.contact_id;
     });
     data.events.forEach(e => {
       if (e.anonymous_id === payload.anonymous_id && !e.contact_id) e.contact_id = payload.contact_id;
+    });
+    data.videoEvents.forEach(v => {
+      if (v.anonymous_id === payload.anonymous_id && !v.contact_id) v.contact_id = payload.contact_id;
     });
     db.setData({ ...data });
     cache.invalidateAll();
