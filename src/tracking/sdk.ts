@@ -2,12 +2,17 @@ import { supabase } from '@/integrations/supabase/client';
 
 const ANON_KEY = 'aarp-anon-id';
 const SESSION_KEY = 'aarp-session';
+const CONTACT_ID_KEY = 'aarp-contact-id';
 
 // API_MODE: "supabase" sends to edge functions; "mock" uses local mock server
 const API_MODE: 'supabase' | 'mock' = 'supabase';
 
 function generateId(): string {
   return 'anon-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+}
+
+function generateClientEventId(): string {
+  return crypto.randomUUID();
 }
 
 function getStoredAnonId(): string {
@@ -31,6 +36,10 @@ function getStoredSessionId(): string {
   const id = 'sess-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
   localStorage.setItem(SESSION_KEY, JSON.stringify({ day: today, id }));
   return id;
+}
+
+function getStoredContactId(): string | undefined {
+  return localStorage.getItem(CONTACT_ID_KEY) || undefined;
 }
 
 async function callEdge(fnName: string, payload: Record<string, any>): Promise<any> {
@@ -74,19 +83,28 @@ export const trackingSDK: TrackingSDK = {
   identify: (contactId, traits) => {
     const payload = { anonymous_id: getStoredAnonId(), contact_id: contactId, ...traits };
     if (API_MODE === 'supabase') {
-      callEdge('identify', payload);
+      callEdge('identify', payload).then((data) => {
+        // Store canonical UUID contact_id from server response
+        if (data?.contact?.id) {
+          localStorage.setItem(CONTACT_ID_KEY, data.contact.id);
+        }
+      });
     } else {
       callMock('identify', payload);
     }
   },
 
   track: (eventName, props) => {
-    const payload = {
+    const payload: Record<string, any> = {
       session_id: getStoredSessionId(),
       anonymous_id: getStoredAnonId(),
       name: eventName,
       props: props || {},
+      client_event_id: generateClientEventId(),
     };
+    const cid = getStoredContactId();
+    if (cid) payload.contact_id = cid;
+
     if (API_MODE === 'supabase') {
       callEdge('ingest-event', payload);
     } else {
@@ -95,12 +113,16 @@ export const trackingSDK: TrackingSDK = {
   },
 
   page: (url, title) => {
-    const payload = {
+    const payload: Record<string, any> = {
       session_id: getStoredSessionId(),
       anonymous_id: getStoredAnonId(),
       name: 'page_view',
       props: { url: url || window.location.pathname, title: title || document.title },
+      client_event_id: generateClientEventId(),
     };
+    const cid = getStoredContactId();
+    if (cid) payload.contact_id = cid;
+
     if (API_MODE === 'supabase') {
       callEdge('ingest-event', payload);
     } else {
@@ -109,13 +131,17 @@ export const trackingSDK: TrackingSDK = {
   },
 
   trackVideo: (videoId, eventName, props) => {
-    const payload = {
+    const payload: Record<string, any> = {
       video_id: videoId,
       session_id: getStoredSessionId(),
       anonymous_id: getStoredAnonId(),
       name: eventName,
       props: props || {},
+      client_event_id: generateClientEventId(),
     };
+    const cid = getStoredContactId();
+    if (cid) payload.contact_id = cid;
+
     if (API_MODE === 'supabase') {
       callEdge('ingest-video', payload);
     } else {
@@ -128,5 +154,6 @@ export const trackingSDK: TrackingSDK = {
   reset: () => {
     localStorage.removeItem(ANON_KEY);
     localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(CONTACT_ID_KEY);
   },
 };

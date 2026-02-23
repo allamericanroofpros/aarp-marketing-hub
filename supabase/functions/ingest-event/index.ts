@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
     );
 
     const body = await req.json();
-    const { anonymous_id, name, props, contact_id } = body;
+    const { anonymous_id, name, props, contact_id, client_event_id } = body;
     const ts = body.ts || new Date().toISOString();
 
     if (!anonymous_id || !name) {
@@ -27,19 +27,27 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Find or create session for this anonymous_id today
-    const dayStart = new Date(ts);
-    dayStart.setUTCHours(0, 0, 0, 0);
-    const dayEnd = new Date(dayStart);
-    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+    // --- Session resolution with stale fallback ---
+    let sessionId: string | undefined;
 
-    let sessionId = body.session_id;
+    if (body.session_id) {
+      const { count } = await supabase
+        .from("sessions")
+        .update({ ended_at: ts })
+        .eq("id", body.session_id)
+        .select("id", { count: "exact", head: true });
 
-    if (sessionId) {
-      // Update ended_at
-      await supabase.from("sessions").update({ ended_at: ts }).eq("id", sessionId);
-    } else {
-      // Find existing session today
+      if (count && count > 0) {
+        sessionId = body.session_id;
+      }
+    }
+
+    if (!sessionId) {
+      const dayStart = new Date(ts);
+      dayStart.setUTCHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+
       const { data: existing } = await supabase
         .from("sessions")
         .select("id")
@@ -71,21 +79,34 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Insert event
+    // --- Insert event with dedupe ---
+    const row: Record<string, any> = {
+      ts,
+      session_id: sessionId,
+      anonymous_id,
+      contact_id: contact_id || null,
+      name,
+      props: props || {},
+    };
+    if (client_event_id) row.client_event_id = client_event_id;
+
     const { data: evt, error } = await supabase
       .from("events")
-      .insert({
-        ts,
-        session_id: sessionId,
-        anonymous_id,
-        contact_id: contact_id || null,
-        name,
-        props: props || {},
-      })
+      .insert(row)
       .select("id")
       .single();
 
-    if (error) throw error;
+    if (error) {
+      // Check for unique violation on client_event_id (code 23505)
+      if (error.code === "23505" && client_event_id) {
+        console.log(`[ingest-event] Dedupe hit for client_event_id=${client_event_id}`);
+        return new Response(
+          JSON.stringify({ ok: true, deduped: true, sessionId }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      throw error;
+    }
 
     return new Response(
       JSON.stringify({ ok: true, eventId: evt.id, sessionId }),

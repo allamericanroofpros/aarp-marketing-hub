@@ -19,6 +19,7 @@ export type Database = {
           anonymous_id: string | null
           created_at: string
           email: string | null
+          external_contact_key: string | null
           first_seen_at: string
           id: string
           last_seen_at: string
@@ -30,6 +31,7 @@ export type Database = {
           anonymous_id?: string | null
           created_at?: string
           email?: string | null
+          external_contact_key?: string | null
           first_seen_at?: string
           id?: string
           last_seen_at?: string
@@ -41,6 +43,7 @@ export type Database = {
           anonymous_id?: string | null
           created_at?: string
           email?: string | null
+          external_contact_key?: string | null
           first_seen_at?: string
           id?: string
           last_seen_at?: string
@@ -53,6 +56,7 @@ export type Database = {
       events: {
         Row: {
           anonymous_id: string
+          client_event_id: string | null
           contact_id: string | null
           id: string
           name: string
@@ -62,6 +66,7 @@ export type Database = {
         }
         Insert: {
           anonymous_id: string
+          client_event_id?: string | null
           contact_id?: string | null
           id?: string
           name: string
@@ -71,6 +76,7 @@ export type Database = {
         }
         Update: {
           anonymous_id?: string
+          client_event_id?: string | null
           contact_id?: string | null
           id?: string
           name?: string
@@ -151,6 +157,7 @@ export type Database = {
       video_events: {
         Row: {
           anonymous_id: string
+          client_event_id: string | null
           contact_id: string | null
           id: string
           name: string
@@ -161,6 +168,7 @@ export type Database = {
         }
         Insert: {
           anonymous_id: string
+          client_event_id?: string | null
           contact_id?: string | null
           id?: string
           name: string
@@ -171,6 +179,7 @@ export type Database = {
         }
         Update: {
           anonymous_id?: string
+          client_event_id?: string | null
           contact_id?: string | null
           id?: string
           name?: string
