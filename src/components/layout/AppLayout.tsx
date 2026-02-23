@@ -1,11 +1,12 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useFilter, DatePreset } from '@/contexts/FilterContext';
 import { useResetData } from '@/hooks/useApi';
+import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, TrendingUp, Filter, Film, CalendarDays,
   MessageSquareText, GitBranch, Cable, ClipboardList, Settings,
-  Monitor, RotateCcw, BarChart3, PlayCircle,
+  Monitor, RotateCcw, BarChart3, PlayCircle, Users, LogOut,
 } from 'lucide-react';
 
 const navItems = [
@@ -23,6 +24,10 @@ const navItems = [
   { label: 'Settings', path: '/settings', icon: Settings },
 ];
 
+const adminNavItems = [
+  { label: 'Users', path: '/admin/users', icon: Users },
+];
+
 const datePresets: { value: DatePreset; label: string }[] = [
   { value: 'last7', label: '7d' },
   { value: 'last30', label: '30d' },
@@ -37,6 +42,7 @@ export default function AppLayout() {
   const location = useLocation();
   const f = useFilter();
   const resetData = useResetData();
+  const { isAdmin, user, signOut, profile } = useAuth();
 
   const handleReset = () => {
     resetData.mutate(undefined, {
@@ -82,12 +88,34 @@ export default function AppLayout() {
                 </Link>
               );
             })}
+            {isAdmin && (
+              <>
+                {!f.tvMode && <div className="px-3 pt-2 pb-1 text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Admin</div>}
+                {adminNavItems.map(item => {
+                  const active = location.pathname.startsWith(item.path);
+                  return (
+                    <Link key={item.path} to={item.path}
+                      className={cn(
+                        'flex items-center gap-2 px-3 py-1.5 text-[12px] transition-colors',
+                        active
+                          ? 'bg-sidebar-accent text-sidebar-accent-foreground border-r-2 border-sidebar-primary font-medium'
+                          : 'text-sidebar-foreground hover:bg-sidebar-accent/50'
+                      )}>
+                      <item.icon size={14} className="shrink-0" />
+                      {!f.tvMode && <span>{item.label}</span>}
+                    </Link>
+                  );
+                })}
+              </>
+            )}
           </nav>
           {!f.tvMode && (
-            <div className="p-3 border-t border-sidebar-border">
-              <p className="text-[8px] text-sidebar-foreground/30 italic leading-tight">
-                "Know what's working. Scale what wins."
-              </p>
+            <div className="p-3 border-t border-sidebar-border space-y-2">
+              <div className="text-[9px] text-sidebar-foreground/50 truncate">{user?.email}</div>
+              <div className="text-[8px] text-muted-foreground">Role: <span className="font-semibold text-sidebar-foreground">{profile?.role}</span></div>
+              <button onClick={signOut} className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                <LogOut size={10} /> Sign Out
+              </button>
             </div>
           )}
         </aside>
