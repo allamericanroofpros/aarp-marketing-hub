@@ -8,6 +8,8 @@ import AppLayout from "@/components/layout/AppLayout";
 import Home from "./pages/Home";
 import Performance from "./pages/Performance";
 import Pipeline from "./pages/Pipeline";
+import AnalyticsPage from "./pages/AnalyticsPage";
+import VideoAnalyticsPage from "./pages/VideoAnalyticsPage";
 import ContentStudio from "./pages/ContentStudio";
 import WebAgendas from "./pages/WebAgendas";
 import AssistantPage from "./pages/AssistantPage";
@@ -31,6 +33,8 @@ const App = () => (
               <Route path="/" element={<Home />} />
               <Route path="/performance" element={<Performance />} />
               <Route path="/pipeline" element={<Pipeline />} />
+              <Route path="/analytics" element={<AnalyticsPage />} />
+              <Route path="/video-analytics" element={<VideoAnalyticsPage />} />
               <Route path="/content" element={<ContentStudio />} />
               <Route path="/agendas" element={<WebAgendas />} />
               <Route path="/assistant" element={<AssistantPage />} />

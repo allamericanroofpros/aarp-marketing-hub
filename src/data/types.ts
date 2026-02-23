@@ -36,6 +36,7 @@ export interface Lead {
   landing_page: string;
   lead_type: 'call' | 'form' | 'chat' | 'walk-in';
   status: 'new' | 'contacted' | 'scheduled' | 'ran' | 'no-show' | 'unqualified';
+  contact_id?: string;
 }
 
 export interface Deal {
@@ -54,6 +55,74 @@ export interface Rep {
   name: string;
   role: 'ISR' | 'OSR';
   is_active: boolean;
+}
+
+export interface Contact {
+  id: string;
+  created_at: string;
+  email?: string;
+  phone?: string;
+  name?: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  first_touch_source_id?: string;
+  last_touch_source_id?: string;
+  lifecycle_stage: 'anonymous' | 'lead' | 'opportunity' | 'customer';
+}
+
+export interface Session {
+  id: string;
+  started_at: string;
+  ended_at: string;
+  anonymous_id: string;
+  contact_id?: string;
+  landing_page: string;
+  referrer: string;
+  utm_source: string;
+  utm_medium: string;
+  utm_campaign: string;
+  device: 'mobile' | 'desktop';
+  location: string;
+}
+
+export interface WebEvent {
+  id: string;
+  ts: string;
+  session_id: string;
+  anonymous_id: string;
+  contact_id?: string;
+  name: 'session_start' | 'page_view' | 'scroll' | 'click' | 'form_start' | 'form_submit' | 'cta_click' | 'exit' | 'time_on_page';
+  props: {
+    url?: string;
+    title?: string;
+    scroll_pct?: number;
+    button_id?: string;
+    form_id?: string;
+    value?: string;
+    duration_sec?: number;
+  };
+}
+
+export interface Video {
+  id: string;
+  title: string;
+  platform: 'youtube' | 'vimeo' | 'hosted';
+  url: string;
+  linked_source_id?: string;
+}
+
+export interface VideoEvent {
+  id: string;
+  ts: string;
+  video_id: string;
+  session_id: string;
+  anonymous_id: string;
+  contact_id?: string;
+  name: 'impression' | 'play' | 'progress' | 'complete' | 'dropoff';
+  props: {
+    percent?: 25 | 50 | 75 | 90 | 100;
+    timecode_sec?: number;
+  };
 }
 
 export interface ContentAsset {
@@ -124,6 +193,11 @@ export interface MockData {
   spend: SpendDaily[];
   leads: Lead[];
   deals: Deal[];
+  contacts: Contact[];
+  sessions: Session[];
+  events: WebEvent[];
+  videos: Video[];
+  videoEvents: VideoEvent[];
   contentAssets: ContentAsset[];
   webAgendas: WebAgenda[];
   scorecards: Scorecard[];

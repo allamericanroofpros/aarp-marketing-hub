@@ -4,6 +4,7 @@ import { useFilter } from '@/contexts/FilterContext';
 import { computeKpis, filterByDateRange, fmt$, fmtN, fmtP } from '@/services/metrics';
 import { getUnmappedLeads } from '@/services/attribution';
 import { Bot, Send, Lightbulb, ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const suggestions = [
   "What's our best ROAS channel this month?",
@@ -16,6 +17,7 @@ const suggestions = [
 export default function AssistantPage() {
   const { startDate, endDate, locations } = useFilter();
   const data = getMockData();
+  const navigate = useNavigate();
   const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; text: string }[]>([]);
   const [input, setInput] = useState('');
 
@@ -64,10 +66,10 @@ export default function AssistantPage() {
   };
 
   const recommendations = [
-    { label: 'Scale Winners', desc: 'Increase Google Search budget — best ROAS channel', color: 'text-status-green' },
-    { label: 'Pause Losers', desc: `Review campaigns with <1.5x ROAS`, color: 'text-status-red' },
-    { label: 'Fix Tracking', desc: `${unmapped.length} unmapped leads need source attribution`, color: 'text-status-yellow' },
-    { label: 'Rep Coaching', desc: `Close rate at ${fmtP(kpis.closeRate)} — review bottom performers`, color: 'text-primary' },
+    { label: 'Scale Winners', desc: 'Increase Google Search budget — best ROAS channel', color: 'text-status-green', link: '/performance' },
+    { label: 'Pause Losers', desc: `Review campaigns with <1.5x ROAS`, color: 'text-status-red', link: '/performance' },
+    { label: 'Fix Tracking', desc: `${unmapped.length} unmapped leads need source attribution`, color: 'text-status-yellow', link: '/sources?tab=unmapped' },
+    { label: 'Rep Coaching', desc: `Close rate at ${fmtP(kpis.closeRate)} — review bottom performers`, color: 'text-primary', link: '/pipeline?tab=deals' },
   ];
 
   return (
@@ -118,13 +120,13 @@ export default function AssistantPage() {
             <h3 className="text-xs font-semibold mb-3 flex items-center gap-1.5"><Lightbulb size={13} className="text-accent" /> Action Recommendations</h3>
             <div className="space-y-2.5">
               {recommendations.map(r => (
-                <div key={r.label} className="flex items-start gap-2">
+                <button key={r.label} onClick={() => navigate(r.link)} className="flex items-start gap-2 text-left w-full hover:bg-muted/30 rounded p-1 -m-1 transition-colors">
                   <ArrowRight size={12} className={`${r.color} mt-0.5 shrink-0`} />
                   <div>
                     <p className="text-xs font-medium">{r.label}</p>
                     <p className="text-[10px] text-muted-foreground">{r.desc}</p>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
