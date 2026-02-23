@@ -1,14 +1,18 @@
 import { useState, useMemo } from 'react';
 import { getMockData, updateMockData } from '@/data/mockState';
 import { useFilter } from '@/contexts/FilterContext';
-import { getUnmappedLeads, getUnmappedSpend } from '@/services/attribution';
+import { getUnmappedLeads, getUnmappedSpend, getUnmappedSessions } from '@/services/attribution';
 import { filterByDateRange } from '@/services/metrics';
 import { Copy, Check, Plus } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 
 export default function SourcesAttribution() {
   const data = getMockData();
   const { startDate, endDate } = useFilter();
-  const [tab, setTab] = useState<'sources' | 'rules' | 'unmapped' | 'utm'>('sources');
+  const [searchParams] = useSearchParams();
+  const initialTab = (searchParams.get('tab') as any) || 'sources';
+
+  const [tab, setTab] = useState<'sources' | 'rules' | 'unmapped' | 'utm'>(initialTab);
   const [copied, setCopied] = useState(false);
   const [utmBase, setUtmBase] = useState('https://allamericanroofpros.com/free-estimate');
   const [utmSource, setUtmSource] = useState('google');
@@ -18,8 +22,14 @@ export default function SourcesAttribution() {
 
   const leads = useMemo(() => filterByDateRange(data.leads, 'created_date', startDate, endDate), [data, startDate, endDate]);
   const spend = useMemo(() => filterByDateRange(data.spend, 'date', startDate, endDate), [data, startDate, endDate]);
+  const sessions = useMemo(() => data.sessions.filter(s => {
+    const d = s.started_at.split('T')[0];
+    return d >= startDate && d <= endDate;
+  }), [data, startDate, endDate]);
+
   const unmappedLeads = useMemo(() => getUnmappedLeads(leads, data.mappingRules), [leads, data.mappingRules]);
   const unmappedSpend = useMemo(() => getUnmappedSpend(spend, data.mappingRules), [spend, data.mappingRules]);
+  const unmappedSessions = useMemo(() => getUnmappedSessions(sessions, data.mappingRules), [sessions, data.mappingRules]);
 
   const utmUrl = `${utmBase}?utm_source=${utmSource}&utm_medium=${utmMedium}&utm_campaign=${utmCampaign}${utmContent ? `&utm_content=${utmContent}` : ''}`;
 
@@ -41,10 +51,12 @@ export default function SourcesAttribution() {
     updateMockData({ ...data, mappingRules: [...data.mappingRules, newRule] });
   };
 
+  const totalUnmapped = unmappedLeads.length + unmappedSpend.length + unmappedSessions.length;
+
   const tabs = [
     { key: 'sources', label: 'Sources' },
     { key: 'rules', label: 'Mapping Rules' },
-    { key: 'unmapped', label: `Unmapped (${unmappedLeads.length + unmappedSpend.length})` },
+    { key: 'unmapped', label: `Unmapped (${totalUnmapped})` },
     { key: 'utm', label: 'UTM Builder' },
   ];
 
@@ -120,6 +132,42 @@ export default function SourcesAttribution() {
 
       {tab === 'unmapped' && (
         <div className="space-y-4">
+          {/* Unmapped Sessions */}
+          <div className="bg-card rounded-lg border border-border p-4">
+            <h3 className="text-sm font-semibold mb-3">Unmapped Sessions ({unmappedSessions.length})</h3>
+            {unmappedSessions.length === 0 ? (
+              <p className="text-xs text-muted-foreground">All sessions mapped! 🎉</p>
+            ) : (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground uppercase tracking-wider text-[10px]">
+                    <th className="text-left py-2 px-2">Date</th>
+                    <th className="text-left py-2 px-2">UTM Source</th>
+                    <th className="text-left py-2 px-2">UTM Campaign</th>
+                    <th className="text-left py-2 px-2">Landing Page</th>
+                    <th className="text-left py-2 px-2">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unmappedSessions.slice(0, 10).map(s => (
+                    <tr key={s.id} className="border-b border-border/50">
+                      <td className="py-1.5 px-2">{s.started_at.split('T')[0]}</td>
+                      <td className="py-1.5 px-2 font-mono">{s.utm_source}</td>
+                      <td className="py-1.5 px-2 font-mono">{s.utm_campaign || '—'}</td>
+                      <td className="py-1.5 px-2 font-mono">{s.landing_page}</td>
+                      <td className="py-1.5 px-2">
+                        <button onClick={() => quickMap(s.utm_source, 'utm_source')}
+                          className="flex items-center gap-1 text-primary text-[10px] hover:underline">
+                          <Plus size={10} /> Map
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
           <div className="bg-card rounded-lg border border-border p-4">
             <h3 className="text-sm font-semibold mb-3">Unmapped Leads ({unmappedLeads.length})</h3>
             {unmappedLeads.length === 0 ? (

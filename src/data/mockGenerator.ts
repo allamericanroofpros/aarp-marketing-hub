@@ -1,4 +1,4 @@
-import type { MockData, CanonicalSource, Rep, MappingRule, SpendDaily, Lead, Deal, ContentAsset, WebAgenda, Scorecard, ConnectorStatus } from './types';
+import type { MockData, CanonicalSource, Rep, MappingRule, SpendDaily, Lead, Deal, ContentAsset, WebAgenda, Scorecard, ConnectorStatus, Contact, Session, WebEvent, Video, VideoEvent } from './types';
 
 function mulberry32(seed: number) {
   return () => {
@@ -20,7 +20,10 @@ export function generateMockData(): MockData {
   const dayMs = 86400000;
   const startDate = new Date(today.getTime() - 180 * dayMs);
   const fmt = (d: Date) => d.toISOString().split('T')[0];
+  const fmtTs = (d: Date) => d.toISOString();
   const addD = (d: Date, n: number) => new Date(d.getTime() + n * dayMs);
+  const addH = (d: Date, h: number) => new Date(d.getTime() + h * 3600000);
+  const addM = (d: Date, m: number) => new Date(d.getTime() + m * 60000);
 
   const sources: CanonicalSource[] = [
     { id: 'src-01', name: 'PPC – Google Search', type: 'PPC', is_active: true },
@@ -66,7 +69,6 @@ export function generateMockData(): MockData {
     { id: 'mr-14', input_type: 'landing_page', input_value: '/storm-damage', source_id: 'src-01', priority: 3, is_active: true },
   ];
 
-  // UTM sets with weights for lead generation
   const utmSets = [
     { utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'google-search-roofing', landing_page: '/free-estimate', w: 25 },
     { utm_source: 'google', utm_medium: 'lsa', utm_campaign: 'google-lsa-roofing', landing_page: '/free-estimate', w: 15 },
@@ -87,7 +89,35 @@ export function generateMockData(): MockData {
   }
 
   const leadTypes: Lead['lead_type'][] = ['call', 'form', 'chat', 'walk-in'];
+  const pages = ['/', '/free-estimate', '/storm-damage', '/services', '/about', '/contact', '/reviews', '/eddm-offer', '/spring-special', '/gallery', '/insurance-claims', '/blog/roof-lifespan', '/blog/storm-prep'];
+  const firstNames = ['James','Mary','Robert','Patricia','John','Jennifer','Michael','Linda','David','Barbara','William','Elizabeth','Chris','Susan','Daniel','Jessica','Tom','Sarah','Mark','Karen','Steve','Nancy','Brian','Lisa','Gary','Betty','Kevin','Dorothy','Jason','Margaret'];
+  const lastNames = ['Smith','Johnson','Williams','Brown','Jones','Garcia','Miller','Davis','Rodriguez','Martinez','Hernandez','Lopez','Wilson','Anderson','Thomas','Taylor','Moore','Jackson','Martin','Lee','Perez','Thompson','White','Harris','Clark','Lewis','Robinson','Walker','Young','Allen'];
 
+  // Generate contacts
+  const contacts: Contact[] = [];
+  for (let i = 0; i < 800; i++) {
+    const dayOff = randInt(0, 179);
+    const created = addD(startDate, dayOff);
+    const firstSrc = pick(sources);
+    const lastSrc = r() > 0.5 ? firstSrc : pick(sources);
+    const stage: Contact['lifecycle_stage'] = pick(['anonymous', 'lead', 'opportunity', 'customer']);
+    const fn = pick(firstNames);
+    const ln = pick(lastNames);
+    contacts.push({
+      id: uid('ct', i),
+      created_at: fmtTs(created),
+      email: stage !== 'anonymous' ? `${fn.toLowerCase()}.${ln.toLowerCase()}${i}@email.com` : undefined,
+      phone: stage !== 'anonymous' && r() > 0.3 ? `555-${randInt(100,999)}-${randInt(1000,9999)}` : undefined,
+      name: stage !== 'anonymous' ? `${fn} ${ln}` : undefined,
+      first_seen_at: fmtTs(created),
+      last_seen_at: fmtTs(addD(created, randInt(0, 30))),
+      first_touch_source_id: firstSrc.id,
+      last_touch_source_id: lastSrc.id,
+      lifecycle_stage: stage,
+    });
+  }
+
+  // Generate leads with contact_id linkage
   const leads: Lead[] = [];
   for (let i = 0; i < 1200; i++) {
     const dayOff = randInt(0, 179);
@@ -98,6 +128,7 @@ export function generateMockData(): MockData {
     const status: Lead['status'] = apptSet
       ? pick(['scheduled', 'ran', 'no-show'] as const)
       : pick(['new', 'contacted', 'unqualified'] as const);
+    const contactIdx = i < 800 ? i : randInt(0, 799);
     leads.push({
       id: uid('lead', i),
       created_date: fmt(date),
@@ -110,10 +141,11 @@ export function generateMockData(): MockData {
       landing_page: utm.landing_page,
       lead_type: pick(leadTypes),
       status,
+      contact_id: uid('ct', contactIdx),
     });
   }
 
-  // Deals from eligible leads
+  // Deals
   const eligible = leads.filter(l => l.status === 'ran' || l.status === 'scheduled');
   const shuffled = eligible.sort(() => r() - 0.5).slice(0, Math.min(320, eligible.length));
   const deals: Deal[] = shuffled.map((lead, i) => {
@@ -154,6 +186,103 @@ export function generateMockData(): MockData {
       const amt = randFloat(c.base[0], c.base[1]) * (wknd ? 0.6 : 1);
       spend.push({ id: uid('spend', si++), date: ds, platform: c.platform, campaign_name: c.name, amount: +amt.toFixed(2), location: pick(locations) });
     }
+  }
+
+  // Sessions (5000+)
+  const sessions: Session[] = [];
+  const referrers = ['https://google.com', 'https://facebook.com', '', 'https://yelp.com', 'https://nextdoor.com', ''];
+  for (let i = 0; i < 5200; i++) {
+    const dayOff = randInt(0, 179);
+    const date = addD(startDate, dayOff);
+    const hour = randInt(6, 23);
+    const start = addH(date, hour);
+    const dur = randInt(1, 45);
+    const end = addM(start, dur);
+    const utm = pickUtm();
+    const hasContact = r() > 0.4;
+    const cIdx = hasContact ? randInt(0, Math.min(i, 799)) : -1;
+    sessions.push({
+      id: uid('sess', i),
+      started_at: fmtTs(start),
+      ended_at: fmtTs(end),
+      anonymous_id: uid('anon', i % 2000),
+      contact_id: cIdx >= 0 ? uid('ct', cIdx) : undefined,
+      landing_page: pick(pages),
+      referrer: pick(referrers),
+      utm_source: utm.utm_source,
+      utm_medium: utm.utm_medium,
+      utm_campaign: utm.utm_campaign,
+      device: r() > 0.55 ? 'mobile' : 'desktop',
+      location: pick(locations),
+    });
+  }
+
+  // Web events (40000+)
+  const eventNames: WebEvent['name'][] = ['session_start', 'page_view', 'scroll', 'click', 'form_start', 'form_submit', 'cta_click', 'exit', 'time_on_page'];
+  const events: WebEvent[] = [];
+  for (let i = 0; i < 42000; i++) {
+    const sess = sessions[i % sessions.length];
+    const evtName = pick(eventNames);
+    const tOffset = randInt(0, 30) * 60000;
+    const ts = new Date(new Date(sess.started_at).getTime() + tOffset);
+    events.push({
+      id: uid('evt', i),
+      ts: fmtTs(ts),
+      session_id: sess.id,
+      anonymous_id: sess.anonymous_id,
+      contact_id: sess.contact_id,
+      name: evtName,
+      props: {
+        url: evtName === 'page_view' || evtName === 'exit' ? pick(pages) : undefined,
+        title: evtName === 'page_view' ? pick(['Home', 'Free Estimate', 'Storm Damage', 'Services', 'About Us', 'Reviews', 'Contact']) : undefined,
+        scroll_pct: evtName === 'scroll' ? pick([25, 50, 75, 100]) : undefined,
+        button_id: evtName === 'click' || evtName === 'cta_click' ? pick(['cta-hero', 'cta-sidebar', 'phone-click', 'chat-open', 'nav-services']) : undefined,
+        form_id: evtName === 'form_start' || evtName === 'form_submit' ? pick(['estimate-form', 'contact-form', 'callback-form']) : undefined,
+        duration_sec: evtName === 'time_on_page' ? randInt(5, 300) : undefined,
+      },
+    });
+  }
+
+  // Videos
+  const videoTitles = [
+    'Storm Damage Roof Repair', 'Customer Testimonial - Johnson Family', 'Why Choose AARP',
+    'Metal Roof Installation Guide', 'Insurance Claims Made Easy', 'Spring Roofing Tips',
+    'Behind the Scenes: A Day with the Crew', 'Drone Inspection Showcase',
+    'Before & After: Complete Tear-Off', 'Community Giveback Highlight',
+    'Gutter Guard Benefits', 'Veterans Appreciation Special', 'Roof Maintenance 101',
+    'Emergency Leak Repair', 'Financing Options Explained',
+  ];
+  const videos: Video[] = videoTitles.map((title, i) => ({
+    id: uid('vid', i),
+    title,
+    platform: pick(['youtube', 'vimeo', 'hosted'] as const),
+    url: `https://example.com/videos/${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+    linked_source_id: r() > 0.5 ? pick(sources).id : undefined,
+  }));
+
+  // Video events (8000+)
+  const videoEventNames: VideoEvent['name'][] = ['impression', 'play', 'progress', 'complete', 'dropoff'];
+  const milestones: (25 | 50 | 75 | 90 | 100)[] = [25, 50, 75, 90, 100];
+  const videoEvents: VideoEvent[] = [];
+  for (let i = 0; i < 8500; i++) {
+    const sess = sessions[i % sessions.length];
+    const vid = pick(videos);
+    const evtName = pick(videoEventNames);
+    const tOffset = randInt(0, 20) * 60000;
+    const ts = new Date(new Date(sess.started_at).getTime() + tOffset);
+    videoEvents.push({
+      id: uid('vevt', i),
+      ts: fmtTs(ts),
+      video_id: vid.id,
+      session_id: sess.id,
+      anonymous_id: sess.anonymous_id,
+      contact_id: sess.contact_id,
+      name: evtName,
+      props: {
+        percent: evtName === 'progress' || evtName === 'complete' ? (evtName === 'complete' ? 100 : pick(milestones)) : undefined,
+        timecode_sec: evtName === 'dropoff' ? randInt(5, 180) : undefined,
+      },
+    });
   }
 
   // Content assets
@@ -223,7 +352,7 @@ export function generateMockData(): MockData {
 
   // Scorecards
   const scorecards: Scorecard[] = [];
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 12; i++) {
     const isM = i < 3;
     const gap = isM ? 30 : 7;
     const sd = addD(today, -(i + 1) * gap);
@@ -263,5 +392,5 @@ export function generateMockData(): MockData {
     { id: 'conn-06', name: 'Mail/DOPE', status: 'disconnected', last_sync: '', health_message: 'Not configured. Connect to import mail campaign data.', mock_requirements_needed: ['API key from DOPE provider', 'Campaign ID mapping'] },
   ];
 
-  return { sources, reps, mappingRules, spend, leads, deals, contentAssets, webAgendas, scorecards, connectors };
+  return { sources, reps, mappingRules, spend, leads, deals, contacts, sessions, events, videos, videoEvents, contentAssets, webAgendas, scorecards, connectors };
 }
