@@ -1,101 +1,154 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { Badge } from '@/components/ui/badge';
 
-interface ProfileRow {
+interface UserRow {
   id: string;
-  user_id: string;
-  role: 'admin' | 'team';
+  email: string;
+  role: 'admin' | 'team' | null;
   display_name: string | null;
   created_at: string;
+  confirmed: boolean;
+  last_sign_in: string | null;
 }
 
 export default function AdminUsersPage() {
-  const [profiles, setProfiles] = useState<ProfileRow[]>([]);
+  const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'admin' | 'team'>('team');
+  const [inviting, setInviting] = useState(false);
   const { toast } = useToast();
 
-  const fetchProfiles = async () => {
+  const callAdmin = async (body: Record<string, unknown>) => {
+    const { data, error } = await supabase.functions.invoke('admin-users', { body });
+    if (error) throw new Error(error.message);
+    if (data?.error) throw new Error(data.error);
+    return data;
+  };
+
+  const fetchUsers = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, user_id, role, display_name, created_at')
-      .order('created_at', { ascending: true });
-    if (error) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
-    } else {
-      setProfiles((data as ProfileRow[]) || []);
+    try {
+      const data = await callAdmin({ action: 'list' });
+      setUsers(data.users || []);
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
     }
     setLoading(false);
   };
 
-  useEffect(() => { fetchProfiles(); }, []);
+  useEffect(() => { fetchUsers(); }, []);
 
-  const updateRole = async (profileId: string, newRole: 'admin' | 'team') => {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ role: newRole })
-      .eq('id', profileId);
-    if (error) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
-    } else {
-      toast({ title: 'Updated', description: `Role changed to ${newRole}` });
-      fetchProfiles();
+  const handleInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInviting(true);
+    try {
+      await callAdmin({ action: 'invite', email: inviteEmail, role: inviteRole });
+      toast({ title: 'Invited', description: `Invite sent to ${inviteEmail}` });
+      setInviteEmail('');
+      fetchUsers();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
     }
+    setInviting(false);
   };
 
-  const deleteProfile = async (profileId: string) => {
-    if (!confirm('Remove this user\'s profile? They will lose access.')) return;
-    const { error } = await supabase.from('profiles').delete().eq('id', profileId);
-    if (error) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
-    } else {
-      toast({ title: 'Deleted' });
-      fetchProfiles();
+  const handleSetRole = async (userId: string, role: 'admin' | 'team') => {
+    try {
+      await callAdmin({ action: 'setRole', targetUserId: userId, role });
+      toast({ title: 'Updated', description: `Role changed to ${role}` });
+      fetchUsers();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
     }
   };
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-bold">User Management</h2>
-      <p className="text-xs text-muted-foreground">Admin only — manage team member roles and access.</p>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-bold">User Management</h2>
+        <p className="text-xs text-muted-foreground">Invite users and manage roles.</p>
+      </div>
+
+      {/* Invite form */}
+      <form onSubmit={handleInvite} className="flex items-end gap-2 max-w-lg">
+        <div className="flex-1">
+          <label className="text-xs font-medium text-muted-foreground">Email</label>
+          <Input
+            type="email"
+            value={inviteEmail}
+            onChange={e => setInviteEmail(e.target.value)}
+            required
+            placeholder="user@company.com"
+            className="mt-1"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Role</label>
+          <Select value={inviteRole} onValueChange={v => setInviteRole(v as 'admin' | 'team')}>
+            <SelectTrigger className="mt-1 w-24 h-9 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="team">team</SelectItem>
+              <SelectItem value="admin">admin</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Button type="submit" size="sm" disabled={inviting} className="text-xs">
+          {inviting ? 'Sending…' : 'Invite'}
+        </Button>
+      </form>
+
+      {/* Users table */}
       {loading ? (
         <p className="text-xs text-muted-foreground">Loading…</p>
-      ) : profiles.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No profiles found.</p>
+      ) : users.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No users found.</p>
       ) : (
-        <div className="bg-card border border-border rounded-lg overflow-hidden max-w-2xl">
+        <div className="bg-card border border-border rounded-lg overflow-hidden">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border bg-secondary/50">
-                <th className="text-left p-2 font-medium text-muted-foreground">User ID</th>
-                <th className="text-left p-2 font-medium text-muted-foreground">Display Name</th>
+                <th className="text-left p-2 font-medium text-muted-foreground">Email</th>
                 <th className="text-left p-2 font-medium text-muted-foreground">Role</th>
+                <th className="text-left p-2 font-medium text-muted-foreground">Status</th>
                 <th className="text-left p-2 font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {profiles.map(p => (
-                <tr key={p.id} className="border-b border-border last:border-0">
-                  <td className="p-2 font-mono text-[10px] text-muted-foreground">{p.user_id.slice(0, 8)}…</td>
-                  <td className="p-2">{p.display_name || '—'}</td>
+              {users.map(u => (
+                <tr key={u.id} className="border-b border-border last:border-0">
+                  <td className="p-2">{u.email}</td>
                   <td className="p-2">
-                    <Select value={p.role} onValueChange={(v) => updateRole(p.id, v as 'admin' | 'team')}>
-                      <SelectTrigger className="h-7 w-24 text-[10px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="admin">admin</SelectItem>
-                        <SelectItem value="team">team</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {u.role ? (
+                      <Select value={u.role} onValueChange={v => handleSetRole(u.id, v as 'admin' | 'team')}>
+                        <SelectTrigger className="h-7 w-24 text-[10px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="admin">admin</SelectItem>
+                          <SelectItem value="team">team</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="p-2">
-                    <Button variant="ghost" size="sm" className="text-[10px] text-destructive" onClick={() => deleteProfile(p.id)}>
-                      Remove
-                    </Button>
+                    {u.confirmed ? (
+                      <Badge variant="outline" className="text-[10px]">Active</Badge>
+                    ) : (
+                      <Badge variant="secondary" className="text-[10px]">Pending</Badge>
+                    )}
+                  </td>
+                  <td className="p-2 text-muted-foreground text-[10px]">
+                    {u.last_sign_in ? `Last login: ${new Date(u.last_sign_in).toLocaleDateString()}` : 'Never signed in'}
                   </td>
                 </tr>
               ))}

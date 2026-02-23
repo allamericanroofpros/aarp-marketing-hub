@@ -7,6 +7,8 @@ import { FilterProvider } from "@/contexts/FilterContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import AppLayout from "@/components/layout/AppLayout";
 import LoginPage from "./pages/LoginPage";
+import SetupPage from "./pages/SetupPage";
+import AuthCallbackPage from "./pages/AuthCallbackPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import PendingAccessPage from "./pages/PendingAccessPage";
 import Home from "./pages/Home";
@@ -77,6 +79,8 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <Routes>
+            <Route path="/setup" element={<SetupPage />} />
+            <Route path="/auth/callback" element={<AuthCallbackPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/*" element={<AuthGate />} />
           </Routes>
