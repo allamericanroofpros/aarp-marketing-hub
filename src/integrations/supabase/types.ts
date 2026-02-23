@@ -14,7 +14,188 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      contacts: {
+        Row: {
+          anonymous_id: string | null
+          created_at: string
+          email: string | null
+          first_seen_at: string
+          id: string
+          last_seen_at: string
+          lifecycle_stage: string
+          name: string | null
+          phone: string | null
+        }
+        Insert: {
+          anonymous_id?: string | null
+          created_at?: string
+          email?: string | null
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          lifecycle_stage?: string
+          name?: string | null
+          phone?: string | null
+        }
+        Update: {
+          anonymous_id?: string | null
+          created_at?: string
+          email?: string | null
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          lifecycle_stage?: string
+          name?: string | null
+          phone?: string | null
+        }
+        Relationships: []
+      }
+      events: {
+        Row: {
+          anonymous_id: string
+          contact_id: string | null
+          id: string
+          name: string
+          props: Json | null
+          session_id: string | null
+          ts: string
+        }
+        Insert: {
+          anonymous_id: string
+          contact_id?: string | null
+          id?: string
+          name: string
+          props?: Json | null
+          session_id?: string | null
+          ts?: string
+        }
+        Update: {
+          anonymous_id?: string
+          contact_id?: string | null
+          id?: string
+          name?: string
+          props?: Json | null
+          session_id?: string | null
+          ts?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "events_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "events_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sessions: {
+        Row: {
+          anonymous_id: string
+          contact_id: string | null
+          device: string | null
+          ended_at: string | null
+          id: string
+          landing_page: string | null
+          location: string | null
+          referrer: string | null
+          started_at: string
+          utm_campaign: string | null
+          utm_medium: string | null
+          utm_source: string | null
+        }
+        Insert: {
+          anonymous_id: string
+          contact_id?: string | null
+          device?: string | null
+          ended_at?: string | null
+          id?: string
+          landing_page?: string | null
+          location?: string | null
+          referrer?: string | null
+          started_at?: string
+          utm_campaign?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+        }
+        Update: {
+          anonymous_id?: string
+          contact_id?: string | null
+          device?: string | null
+          ended_at?: string | null
+          id?: string
+          landing_page?: string | null
+          location?: string | null
+          referrer?: string | null
+          started_at?: string
+          utm_campaign?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sessions_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      video_events: {
+        Row: {
+          anonymous_id: string
+          contact_id: string | null
+          id: string
+          name: string
+          props: Json | null
+          session_id: string | null
+          ts: string
+          video_id: string
+        }
+        Insert: {
+          anonymous_id: string
+          contact_id?: string | null
+          id?: string
+          name: string
+          props?: Json | null
+          session_id?: string | null
+          ts?: string
+          video_id: string
+        }
+        Update: {
+          anonymous_id?: string
+          contact_id?: string | null
+          id?: string
+          name?: string
+          props?: Json | null
+          session_id?: string | null
+          ts?: string
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_events_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "video_events_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
