@@ -1,102 +1,17 @@
-import { useMemo } from 'react';
 import { useFilter } from '@/contexts/FilterContext';
-import { getMockData } from '@/data/mockState';
-import { computeKpis, computeDeltas, filterByDateRange, fmt$, fmtN, fmtP } from '@/services/metrics';
-import { resolveSource } from '@/services/attribution';
+import { useHomeData } from '@/hooks/useApi';
 import { KpiCard } from '@/components/shared/KpiCard';
+import { fmt$, fmtN, fmtP } from '@/lib/format';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { AlertTriangle, TrendingDown, HelpCircle } from 'lucide-react';
-import { subDays, format } from 'date-fns';
 
 export default function Home() {
   const { startDate, endDate, locations } = useFilter();
-  const data = getMockData();
+  const { data: result, isLoading } = useHomeData({ startDate, endDate, locations });
 
-  const filtered = useMemo(() => {
-    let leads = filterByDateRange(data.leads, 'created_date', startDate, endDate);
-    let spend = filterByDateRange(data.spend, 'date', startDate, endDate);
-    if (locations.length > 0) {
-      leads = leads.filter(l => locations.includes(l.location));
-      spend = spend.filter(s => locations.includes(s.location));
-    }
-    const leadIds = new Set(leads.map(l => l.id));
-    const deals = data.deals.filter(d => leadIds.has(d.lead_id));
-    return { leads, deals, spend };
-  }, [data, startDate, endDate, locations]);
+  if (isLoading || !result) return <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>;
 
-  const kpis = useMemo(() => computeKpis(filtered.leads, filtered.deals, filtered.spend), [filtered]);
-
-  const prevKpis = useMemo(() => {
-    const days = Math.max(1, Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000));
-    const pEnd = format(subDays(new Date(startDate), 1), 'yyyy-MM-dd');
-    const pStart = format(subDays(new Date(startDate), days), 'yyyy-MM-dd');
-    let leads = filterByDateRange(data.leads, 'created_date', pStart, pEnd);
-    let spend = filterByDateRange(data.spend, 'date', pStart, pEnd);
-    if (locations.length > 0) {
-      leads = leads.filter(l => locations.includes(l.location));
-      spend = spend.filter(s => locations.includes(s.location));
-    }
-    const leadIds = new Set(leads.map(l => l.id));
-    const deals = data.deals.filter(d => leadIds.has(d.lead_id));
-    return computeKpis(leads, deals, spend);
-  }, [data, startDate, endDate, locations]);
-
-  const deltas = computeDeltas(kpis, prevKpis);
-
-  const trendData = useMemo(() => {
-    const days: Record<string, { date: string; spend: number; revenue: number }> = {};
-    filtered.spend.forEach(s => {
-      if (!days[s.date]) days[s.date] = { date: s.date, spend: 0, revenue: 0 };
-      days[s.date].spend += s.amount;
-    });
-    filtered.deals.filter(d => d.status === 'won').forEach(d => {
-      if (!days[d.close_date]) days[d.close_date] = { date: d.close_date, spend: 0, revenue: 0 };
-      days[d.close_date].revenue += d.revenue;
-    });
-    return Object.values(days).sort((a, b) => a.date.localeCompare(b.date));
-  }, [filtered]);
-
-  const topSources = useMemo(() => {
-    const m: Record<string, { name: string; spend: number; leads: number; revenue: number }> = {};
-    filtered.leads.forEach(lead => {
-      const sid = resolveSource(lead, data.mappingRules);
-      const name = sid ? (data.sources.find(s => s.id === sid)?.name || 'Unknown') : 'Unmapped';
-      if (!m[name]) m[name] = { name, spend: 0, leads: 0, revenue: 0 };
-      m[name].leads++;
-    });
-    filtered.deals.filter(d => d.status === 'won').forEach(deal => {
-      const lead = data.leads.find(l => l.id === deal.lead_id);
-      if (!lead) return;
-      const sid = resolveSource(lead, data.mappingRules);
-      const name = sid ? (data.sources.find(s => s.id === sid)?.name || 'Unknown') : 'Unmapped';
-      if (!m[name]) m[name] = { name, spend: 0, leads: 0, revenue: 0 };
-      m[name].revenue += deal.revenue;
-    });
-    filtered.spend.forEach(s => {
-      const name = s.campaign_name.includes('google-search') ? 'PPC – Google Search'
-        : s.campaign_name.includes('lsa') ? 'PPC – Google LSA'
-        : s.campaign_name.includes('fb') ? 'PPC – Facebook'
-        : s.campaign_name.includes('eddm') ? 'Direct Mail – EDDM Feb 2026'
-        : s.campaign_name.includes('targeted') ? 'Direct Mail – Targeted Mail' : 'Other';
-      if (!m[name]) m[name] = { name, spend: 0, leads: 0, revenue: 0 };
-      m[name].spend += s.amount;
-    });
-    return Object.values(m)
-      .map(s => ({ ...s, roas: s.spend > 0 ? s.revenue / s.spend : 0, cpl: s.leads > 0 ? s.spend / s.leads : 0 }))
-      .sort((a, b) => b.revenue - a.revenue).slice(0, 5);
-  }, [filtered, data]);
-
-  const alerts = useMemo(() => {
-    const items: { type: string; text: string }[] = [];
-    const unmapped = filtered.leads.filter(l => resolveSource(l, data.mappingRules) === null);
-    if (unmapped.length > 5) items.push({ type: 'warning', text: `${unmapped.length} unmapped leads need source attribution` });
-    if (kpis.cpl > 100) items.push({ type: 'danger', text: `CPL is ${fmt$(kpis.cpl)} — review underperforming channels` });
-    topSources.forEach(s => {
-      if (s.spend > 500 && s.roas < 2) items.push({ type: 'warning', text: `${s.name}: low ROAS (${s.roas.toFixed(1)}x) on ${fmt$(s.spend)} spend` });
-    });
-    if (kpis.closeRate < 0.15) items.push({ type: 'info', text: `Close rate ${fmtP(kpis.closeRate)} — consider rep coaching` });
-    return items.slice(0, 5);
-  }, [filtered, data, kpis, topSources]);
+  const { kpis, deltas, trendData, topSources, alerts } = result;
 
   const cards = [
     { label: 'Total Spend', value: fmt$(kpis.spend), delta: deltas.spend },

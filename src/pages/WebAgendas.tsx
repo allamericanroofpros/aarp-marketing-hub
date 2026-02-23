@@ -1,13 +1,16 @@
 import { useState } from 'react';
-import { getMockData } from '@/data/mockState';
-import { fmt$ } from '@/services/metrics';
-import { CalendarDays, ExternalLink, CheckCircle2, Circle } from 'lucide-react';
+import { useWebAgendas } from '@/hooks/useApi';
+import { fmt$ } from '@/lib/format';
+import { CalendarDays, ExternalLink } from 'lucide-react';
 
 export default function WebAgendas() {
-  const data = getMockData();
+  const { data: webAgendas, isLoading } = useWebAgendas();
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<'calendar' | 'brief'>('calendar');
-  const agenda = selected ? data.webAgendas.find(a => a.id === selected) : null;
+
+  if (isLoading || !webAgendas) return <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>;
+
+  const agenda = selected ? webAgendas.find(a => a.id === selected) : null;
 
   return (
     <div className="space-y-4">
@@ -26,7 +29,7 @@ export default function WebAgendas() {
       {view === 'calendar' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           <div className="lg:col-span-1 space-y-2 max-h-[75vh] overflow-y-auto">
-            {data.webAgendas.map(a => (
+            {webAgendas.map(a => (
               <button key={a.id} onClick={() => setSelected(a.id)}
                 className={`w-full text-left p-3 rounded-lg border transition-colors ${selected === a.id ? 'bg-primary/10 border-primary/40' : 'bg-card border-border hover:border-primary/20'}`}>
                 <div className="flex items-center gap-2 mb-1">
@@ -38,7 +41,6 @@ export default function WebAgendas() {
               </button>
             ))}
           </div>
-
           <div className="lg:col-span-2">
             {agenda ? (
               <div className="bg-card rounded-lg border border-border p-5 space-y-4">
@@ -82,18 +84,9 @@ export default function WebAgendas() {
                 <div>
                   <h4 className="text-xs font-semibold mb-1.5">KPI Targets</h4>
                   <div className="grid grid-cols-3 gap-2">
-                    <div className="bg-secondary/50 rounded p-2 text-center">
-                      <p className="text-[10px] text-muted-foreground">Leads</p>
-                      <p className="text-xs font-bold">{agenda.kpis.leads_target}</p>
-                    </div>
-                    <div className="bg-secondary/50 rounded p-2 text-center">
-                      <p className="text-[10px] text-muted-foreground">CPL Target</p>
-                      <p className="text-xs font-bold">{fmt$(agenda.kpis.cpl_target)}</p>
-                    </div>
-                    <div className="bg-secondary/50 rounded p-2 text-center">
-                      <p className="text-[10px] text-muted-foreground">Revenue</p>
-                      <p className="text-xs font-bold">{fmt$(agenda.kpis.revenue_target)}</p>
-                    </div>
+                    <div className="bg-secondary/50 rounded p-2 text-center"><p className="text-[10px] text-muted-foreground">Leads</p><p className="text-xs font-bold">{agenda.kpis.leads_target}</p></div>
+                    <div className="bg-secondary/50 rounded p-2 text-center"><p className="text-[10px] text-muted-foreground">CPL Target</p><p className="text-xs font-bold">{fmt$(agenda.kpis.cpl_target)}</p></div>
+                    <div className="bg-secondary/50 rounded p-2 text-center"><p className="text-[10px] text-muted-foreground">Revenue</p><p className="text-xs font-bold">{fmt$(agenda.kpis.revenue_target)}</p></div>
                   </div>
                 </div>
                 <div>
@@ -125,26 +118,11 @@ export default function WebAgendas() {
             <h3 className="text-lg font-bold mt-1">Weekly Sales Brief</h3>
             <p className="text-xs text-muted-foreground">Week of {agenda.week_start}</p>
           </div>
-          <div>
-            <h4 className="text-xs font-bold text-primary">THIS WEEK'S THEME</h4>
-            <p className="text-sm font-semibold mt-1">{agenda.theme}</p>
-            <p className="text-xs text-muted-foreground">{agenda.goal}</p>
-          </div>
-          <div>
-            <h4 className="text-xs font-bold text-primary">PRIMARY OFFER</h4>
-            <p className="text-sm font-semibold mt-1">{agenda.primary_offer}</p>
-          </div>
-          <div>
-            <h4 className="text-xs font-bold text-primary">TALKING POINTS</h4>
-            <ul className="mt-1 space-y-1">{agenda.talking_points.map((t, i) => <li key={i} className="text-xs">• {t}</li>)}</ul>
-          </div>
-          <div>
-            <h4 className="text-xs font-bold text-primary">CALL-TO-ACTIONS</h4>
-            <p className="text-xs mt-1">{agenda.ctas.join(' | ')}</p>
-          </div>
-          <div className="text-center pt-4 border-t border-border">
-            <p className="text-[10px] text-muted-foreground">Target Area: {agenda.target_area} · Landing: {agenda.landing_page_url}</p>
-          </div>
+          <div><h4 className="text-xs font-bold text-primary">THIS WEEK'S THEME</h4><p className="text-sm font-semibold mt-1">{agenda.theme}</p><p className="text-xs text-muted-foreground">{agenda.goal}</p></div>
+          <div><h4 className="text-xs font-bold text-primary">PRIMARY OFFER</h4><p className="text-sm font-semibold mt-1">{agenda.primary_offer}</p></div>
+          <div><h4 className="text-xs font-bold text-primary">TALKING POINTS</h4><ul className="mt-1 space-y-1">{agenda.talking_points.map((t, i) => <li key={i} className="text-xs">• {t}</li>)}</ul></div>
+          <div><h4 className="text-xs font-bold text-primary">CALL-TO-ACTIONS</h4><p className="text-xs mt-1">{agenda.ctas.join(' | ')}</p></div>
+          <div className="text-center pt-4 border-t border-border"><p className="text-[10px] text-muted-foreground">Target Area: {agenda.target_area} · Landing: {agenda.landing_page_url}</p></div>
         </div>
       )}
 

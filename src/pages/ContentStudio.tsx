@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { getMockData } from '@/data/mockState';
+import { useContentAssets } from '@/hooks/useApi';
 import type { ContentAsset } from '@/data/types';
 import { Film, Image, FileText, Palette, Eye, MousePointerClick, Users } from 'lucide-react';
 
@@ -14,8 +14,10 @@ const statusCols: { key: ContentAsset['status']; label: string; color: string }[
 const typeIcon: Record<string, any> = { video: Film, photo: Image, post: FileText, 'ad-creative': Palette };
 
 export default function ContentStudio() {
-  const data = getMockData();
+  const { data: contentAssets, isLoading } = useContentAssets();
   const [view, setView] = useState<'board' | 'performance' | 'checklist'>('board');
+
+  if (isLoading || !contentAssets) return <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>;
 
   return (
     <div className="space-y-4">
@@ -34,7 +36,7 @@ export default function ContentStudio() {
       {view === 'board' && (
         <div className="flex gap-3 overflow-x-auto pb-4">
           {statusCols.map(col => {
-            const items = data.contentAssets.filter(a => a.status === col.key);
+            const items = contentAssets.filter(a => a.status === col.key);
             return (
               <div key={col.key} className={`min-w-[220px] flex-1 bg-card rounded-lg border-t-2 ${col.color} border border-border`}>
                 <div className="p-3 border-b border-border flex items-center justify-between">
@@ -85,7 +87,7 @@ export default function ContentStudio() {
               </tr>
             </thead>
             <tbody>
-              {data.contentAssets.filter(a => a.status === 'published' && a.performance).map(a => (
+              {contentAssets.filter(a => a.status === 'published' && a.performance).map(a => (
                 <tr key={a.id} className="border-b border-border/50 hover:bg-muted/30">
                   <td className="py-1.5 px-2 font-medium">{a.title}</td>
                   <td className="py-1.5 px-2 text-muted-foreground">{a.type}</td>

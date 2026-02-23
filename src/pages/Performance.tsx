@@ -1,26 +1,24 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useFilter } from '@/contexts/FilterContext';
-import { getMockData } from '@/data/mockState';
-import { rollupBySource, rollupByRep } from '@/services/rollups';
-import { fmt$, fmtN, fmtP } from '@/services/metrics';
+import { useRollupBySource, useRollupByRep } from '@/hooks/useApi';
+import { fmt$, fmtN, fmtP } from '@/lib/format';
 import { useNavigate } from 'react-router-dom';
 
 export default function Performance() {
   const { startDate, endDate, locations } = useFilter();
-  const data = getMockData();
   const navigate = useNavigate();
   const [tab, setTab] = useState<'channels' | 'reps'>('channels');
   const [sortKey, setSortKey] = useState('revenue');
   const [sortAsc, setSortAsc] = useState(false);
 
-  const channelData = useMemo(() => {
-    return rollupBySource(data, startDate, endDate, locations)
-      .sort((a: any, b: any) => sortAsc ? a[sortKey] - b[sortKey] : b[sortKey] - a[sortKey]);
-  }, [data, startDate, endDate, locations, sortKey, sortAsc]);
+  const { data: channelRaw, isLoading: cl } = useRollupBySource({ startDate, endDate, locations });
+  const { data: repData, isLoading: rl } = useRollupByRep({ startDate, endDate, locations });
 
-  const repData = useMemo(() => {
-    return rollupByRep(data, startDate, endDate, locations).sort((a, b) => b.revenue - a.revenue);
-  }, [data, startDate, endDate, locations]);
+  if ((tab === 'channels' && (cl || !channelRaw)) || (tab === 'reps' && (rl || !repData)))
+    return <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>;
+
+  const channelData = (channelRaw || []).slice().sort((a: any, b: any) => sortAsc ? a[sortKey] - b[sortKey] : b[sortKey] - a[sortKey]);
+  const reps = (repData || []).slice().sort((a, b) => b.revenue - a.revenue);
 
   const handleSort = (key: string) => {
     if (sortKey === key) setSortAsc(!sortAsc);
@@ -100,7 +98,7 @@ export default function Performance() {
               </tr>
             </thead>
             <tbody>
-              {repData.map((r) => (
+              {reps.map((r) => (
                 <tr key={r.rep_id}
                   onClick={() => navigate(`/pipeline?rep=${r.rep_id}`)}
                   className="border-b border-border/50 hover:bg-muted/30 cursor-pointer">

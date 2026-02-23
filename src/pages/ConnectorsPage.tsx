@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { getMockData } from '@/data/mockState';
-import { Cable, CheckCircle2, XCircle, AlertTriangle, RefreshCw } from 'lucide-react';
+import { useConnectors, useSyncLogs, useRunConnectorSync } from '@/hooks/useApi';
+import { CheckCircle2, XCircle, AlertTriangle, RefreshCw, Cable, Loader2 } from 'lucide-react';
 
 const connectorIcons: Record<string, string> = {
   'Google Ads': '🔍', 'Meta Ads': '📘', 'GiddyUp CRM': '🤠', 'GA4': '📊', 'Call Tracking': '📞', 'Mail/DOPE': '✉️',
 };
-
 const connectorData: Record<string, string> = {
   'Google Ads': 'Spend, clicks, impressions, conversions',
   'Meta Ads': 'Spend, reach, leads, conversions',
@@ -16,9 +15,14 @@ const connectorData: Record<string, string> = {
 };
 
 export default function ConnectorsPage() {
-  const data = getMockData();
+  const { data: connectors = [], isLoading } = useConnectors();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = selectedId ? data.connectors.find(c => c.id === selectedId) : null;
+  const { data: syncLogs = [] } = useSyncLogs(selectedId || undefined);
+  const runSync = useRunConnectorSync();
+
+  if (isLoading) return <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>;
+
+  const selected = selectedId ? connectors.find(c => c.id === selectedId) : null;
 
   const statusIcon = (s: string) => {
     if (s === 'connected') return <CheckCircle2 size={16} className="text-status-green" />;
@@ -30,7 +34,7 @@ export default function ConnectorsPage() {
     <div className="space-y-4">
       <h2 className="text-lg font-bold">Connectors</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {data.connectors.map(c => (
+        {connectors.map(c => (
           <button key={c.id} onClick={() => setSelectedId(c.id)}
             className={`text-left bg-card rounded-lg border p-4 transition-colors hover:border-primary/30 ${selectedId === c.id ? 'border-primary/50' : 'border-border'}`}>
             <div className="flex items-center justify-between mb-2">
@@ -61,66 +65,50 @@ export default function ConnectorsPage() {
                 </div>
               </div>
             </div>
-            <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded font-medium border border-border text-muted-foreground hover:bg-secondary transition-colors">
-              {selected.status === 'connected' ? <><RefreshCw size={12} /> Re-sync</> : <><Cable size={12} /> Connect</>}
+            <button
+              onClick={() => runSync.mutate(selected.id)}
+              disabled={runSync.isPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded font-medium border border-border text-muted-foreground hover:bg-secondary transition-colors disabled:opacity-50">
+              {runSync.isPending ? <><Loader2 size={12} className="animate-spin" /> Syncing...</> :
+                selected.status === 'connected' ? <><RefreshCw size={12} /> Sync Now</> : <><Cable size={12} /> Connect</>}
             </button>
           </div>
-
           <div>
             <h4 className="text-xs font-semibold mb-1">Data Provided</h4>
             <p className="text-xs text-muted-foreground">{connectorData[selected.name] || 'Various data points'}</p>
           </div>
-
           {selected.status === 'error' && (
             <div className="bg-status-yellow/10 border border-status-yellow/20 rounded p-3">
               <h4 className="text-xs font-semibold text-status-yellow mb-1">⚠️ Error Details</h4>
               <p className="text-xs text-muted-foreground">{selected.health_message}</p>
             </div>
           )}
-
           {selected.mock_requirements_needed.length > 0 && (
             <div>
               <h4 className="text-xs font-semibold mb-1.5">Requirements to Connect</h4>
               <ul className="space-y-1">
                 {selected.mock_requirements_needed.map((req, i) => (
-                  <li key={i} className="text-xs text-muted-foreground flex items-center gap-1.5">
-                    <span className="text-primary">•</span> {req}
-                  </li>
+                  <li key={i} className="text-xs text-muted-foreground flex items-center gap-1.5"><span className="text-primary">•</span> {req}</li>
                 ))}
               </ul>
             </div>
           )}
-
-          {selected.status !== 'connected' && (
-            <div className="bg-secondary/50 rounded p-3 border border-border">
-              <h4 className="text-xs font-semibold mb-1">Permissions Needed</h4>
-              <p className="text-[10px] text-muted-foreground">Read access to campaign data, spend reports, and conversion tracking. No write permissions required.</p>
+          {syncLogs.length > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold mb-2">Sync History</h4>
+              <div className="space-y-1.5">
+                {syncLogs.slice(0, 10).map(log => (
+                  <div key={log.id} className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground w-36 shrink-0">{log.timestamp.slice(0, 16).replace('T', ' ')}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${log.status === 'success' ? 'bg-status-green/20 text-status-green' : 'bg-status-red/20 text-status-red'}`}>{log.status}</span>
+                    <span className="text-muted-foreground">{log.message}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
       )}
-
-      <div className="bg-card rounded-lg border border-border p-4">
-        <h3 className="text-sm font-semibold mb-3">Sync Logs</h3>
-        <div className="space-y-2">
-          {[
-            { time: '2026-02-23 08:15', connector: 'Google Ads', status: 'success', msg: 'Imported 4 campaigns, 847 clicks' },
-            { time: '2026-02-23 08:10', connector: 'GiddyUp CRM', status: 'success', msg: 'Synced 12 new leads, 3 deal updates' },
-            { time: '2026-02-23 07:45', connector: 'Meta Ads', status: 'success', msg: 'Imported 2 ad sets, 312 impressions' },
-            { time: '2026-02-22 14:30', connector: 'GA4', status: 'error', msg: 'OAuth token expired. Re-authentication required.' },
-            { time: '2026-02-22 08:00', connector: 'Call Tracking', status: 'success', msg: 'Synced 28 calls, 6 with recordings' },
-          ].map((log, i) => (
-            <div key={i} className="flex items-center gap-3 text-xs">
-              <span className="text-muted-foreground w-32 shrink-0">{log.time}</span>
-              <span className="font-medium w-24 shrink-0">{log.connector}</span>
-              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${log.status === 'success' ? 'bg-status-green/20 text-status-green' : 'bg-status-red/20 text-status-red'}`}>
-                {log.status}
-              </span>
-              <span className="text-muted-foreground">{log.msg}</span>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
