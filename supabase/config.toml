@@ -1,1 +1,10 @@
 project_id = "xztjjkazqasecbjtwgke"
+
+[functions.ingest-event]
+verify_jwt = false
+
+[functions.ingest-video]
+verify_jwt = false
+
+[functions.identify]
+verify_jwt = false

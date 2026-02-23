@@ -1,7 +1,10 @@
-import { api } from '@/api/client';
+import { supabase } from '@/integrations/supabase/client';
 
 const ANON_KEY = 'aarp-anon-id';
 const SESSION_KEY = 'aarp-session';
+
+// API_MODE: "supabase" sends to edge functions; "mock" uses local mock server
+const API_MODE: 'supabase' | 'mock' = 'supabase';
 
 function generateId(): string {
   return 'anon-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
@@ -30,6 +33,30 @@ function getStoredSessionId(): string {
   return id;
 }
 
+async function callEdge(fnName: string, payload: Record<string, any>): Promise<any> {
+  try {
+    const { data, error } = await supabase.functions.invoke(fnName, { body: payload });
+    if (error) {
+      console.warn(`[trackingSDK] Edge function ${fnName} error:`, error);
+    }
+    return data;
+  } catch (e) {
+    console.warn(`[trackingSDK] Edge function ${fnName} failed:`, e);
+    return null;
+  }
+}
+
+async function callMock(action: string, payload: Record<string, any>): Promise<void> {
+  try {
+    const { api } = await import('@/api/client');
+    if (action === 'event') api.ingestEvent(payload);
+    else if (action === 'video') api.ingestVideoEvent(payload);
+    else if (action === 'identify') api.identifyContact(payload);
+  } catch (e) {
+    console.warn(`[trackingSDK] Mock fallback failed:`, e);
+  }
+}
+
 export interface TrackingSDK {
   init(config: { projectId: string; endpoint: string }): void;
   identify(contactId: string, traits?: Record<string, any>): void;
@@ -43,34 +70,59 @@ export interface TrackingSDK {
 
 export const trackingSDK: TrackingSDK = {
   init: () => {},
+
   identify: (contactId, traits) => {
-    api.identifyContact({ anonymous_id: getStoredAnonId(), contact_id: contactId, ...traits });
+    const payload = { anonymous_id: getStoredAnonId(), contact_id: contactId, ...traits };
+    if (API_MODE === 'supabase') {
+      callEdge('identify', payload);
+    } else {
+      callMock('identify', payload);
+    }
   },
+
   track: (eventName, props) => {
-    api.ingestEvent({
+    const payload = {
       session_id: getStoredSessionId(),
       anonymous_id: getStoredAnonId(),
       name: eventName,
       props: props || {},
-    });
+    };
+    if (API_MODE === 'supabase') {
+      callEdge('ingest-event', payload);
+    } else {
+      callMock('event', payload);
+    }
   },
+
   page: (url, title) => {
-    api.ingestEvent({
+    const payload = {
       session_id: getStoredSessionId(),
       anonymous_id: getStoredAnonId(),
       name: 'page_view',
       props: { url: url || window.location.pathname, title: title || document.title },
-    });
+    };
+    if (API_MODE === 'supabase') {
+      callEdge('ingest-event', payload);
+    } else {
+      callMock('event', payload);
+    }
   },
+
   trackVideo: (videoId, eventName, props) => {
-    api.ingestVideoEvent({
+    const payload = {
       video_id: videoId,
       session_id: getStoredSessionId(),
       anonymous_id: getStoredAnonId(),
       name: eventName,
       props: props || {},
-    });
+    };
+    if (API_MODE === 'supabase') {
+      callEdge('ingest-video', payload);
+    } else {
+      callMock('video', payload);
+    }
   },
+
   getAnonymousId: () => getStoredAnonId(),
   getSessionId: () => getStoredSessionId(),
   reset: () => {
