@@ -53,6 +53,42 @@ export type Database = {
         }
         Relationships: []
       }
+      content_calendar: {
+        Row: {
+          content_type: string
+          created_at: string
+          id: string
+          location: string
+          notes: string | null
+          scheduled_date: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          content_type?: string
+          created_at?: string
+          id?: string
+          location?: string
+          notes?: string | null
+          scheduled_date?: string
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          content_type?: string
+          created_at?: string
+          id?: string
+          location?: string
+          notes?: string | null
+          scheduled_date?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       events: {
         Row: {
           anonymous_id: string
