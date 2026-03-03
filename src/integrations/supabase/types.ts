@@ -101,6 +101,42 @@ export type Database = {
           },
         ]
       }
+      microsites: {
+        Row: {
+          created_at: string
+          id: string
+          leads: number
+          location: string
+          name: string
+          service: string
+          status: string
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          leads?: number
+          location: string
+          name: string
+          service: string
+          status?: string
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          leads?: number
+          location?: string
+          name?: string
+          service?: string
+          status?: string
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
