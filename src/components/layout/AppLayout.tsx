@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, TrendingUp, Filter, Film, CalendarDays,
   MessageSquareText, GitBranch, Cable, ClipboardList, Settings,
-  Monitor, RotateCcw, BarChart3, PlayCircle, Users, LogOut,
+  Monitor, RotateCcw, BarChart3, PlayCircle, Users, LogOut, Search, Globe,
 } from 'lucide-react';
 
 const navItems = [
@@ -21,6 +21,8 @@ const navItems = [
   { label: 'Sources', path: '/sources', icon: GitBranch },
   { label: 'Connectors', path: '/connectors', icon: Cable },
   { label: 'Scorecards', path: '/scorecards', icon: ClipboardList },
+  { label: 'SEO Hub', path: '/seo', icon: Search },
+  { label: 'Microsites', path: '/microsites', icon: Globe },
   { label: 'Settings', path: '/settings', icon: Settings },
 ];
 

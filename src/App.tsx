@@ -22,6 +22,8 @@ import AssistantPage from "./pages/AssistantPage";
 import SourcesAttribution from "./pages/SourcesAttribution";
 import ConnectorsPage from "./pages/ConnectorsPage";
 import ScorecardPage from "./pages/ScorecardPage";
+import SeoHubPage from "./pages/SeoHubPage";
+import MicrositesPage from "./pages/MicrositesPage";
 import SettingsPage from "./pages/SettingsPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import NotFound from "./pages/NotFound";
@@ -56,6 +58,8 @@ function AuthGate() {
           <Route path="/sources" element={<SourcesAttribution />} />
           <Route path="/connectors" element={<ConnectorsPage />} />
           <Route path="/scorecards" element={<ScorecardPage />} />
+          <Route path="/seo" element={<SeoHubPage />} />
+          <Route path="/microsites" element={<MicrositesPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/admin/users" element={<AdminOnly><AdminUsersPage /></AdminOnly>} />
         </Route>
