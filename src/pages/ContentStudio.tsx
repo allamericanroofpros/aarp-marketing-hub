@@ -1,132 +1,308 @@
-import { useState } from 'react';
-import { useContentAssets } from '@/hooks/useApi';
-import type { ContentAsset } from '@/data/types';
-import { Film, Image, FileText, Palette, Eye, MousePointerClick, Users } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Loader2, Copy, Save, Sparkles } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
-const statusCols: { key: ContentAsset['status']; label: string; color: string }[] = [
-  { key: 'idea', label: 'Ideas', color: 'border-muted-foreground/30' },
-  { key: 'in-production', label: 'Production', color: 'border-primary/50' },
-  { key: 'editing', label: 'Editing', color: 'border-status-yellow/50' },
-  { key: 'scheduled', label: 'Scheduled', color: 'border-chart-5/50' },
-  { key: 'published', label: 'Published', color: 'border-status-green/50' },
+const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/seo-chat`;
+
+const LOCATIONS = ['Mansfield', 'Sandusky', 'Huron', 'All Areas'];
+const TONES = ['Professional', 'Friendly', 'Urgent', 'Educational', 'Conversational'];
+
+interface TabConfig {
+  value: string;
+  label: string;
+  systemContext: string;
+  fields: FieldConfig[];
+}
+
+interface FieldConfig {
+  name: string;
+  label: string;
+  type: 'text' | 'textarea' | 'select';
+  placeholder?: string;
+  options?: string[];
+  required?: boolean;
+}
+
+const CONTENT_TABS: TabConfig[] = [
+  {
+    value: 'blog',
+    label: 'Blog Post',
+    systemContext: 'Write a complete, SEO-optimized blog post for a roofing company. Include an engaging title, introduction, H2/H3 subheadings, and a call-to-action. Write 800-1200 words. Use natural keyword placement.',
+    fields: [
+      { name: 'topic', label: 'Topic', type: 'text', placeholder: 'e.g. Signs you need a roof replacement', required: true },
+      { name: 'location', label: 'Location', type: 'select', options: LOCATIONS, required: true },
+      { name: 'keywords', label: 'Target Keywords', type: 'text', placeholder: 'roof repair, storm damage, shingle replacement' },
+      { name: 'tone', label: 'Tone', type: 'select', options: TONES },
+      { name: 'notes', label: 'Additional Notes', type: 'textarea', placeholder: 'Any specific points to cover...' },
+    ],
+  },
+  {
+    value: 'service',
+    label: 'Service Page',
+    systemContext: 'Write persuasive, SEO-optimized service page copy for a roofing company. Include a compelling headline, benefits, process steps, FAQ section, and strong CTA. Focus on local relevance and trust signals.',
+    fields: [
+      { name: 'service', label: 'Service', type: 'text', placeholder: 'e.g. Storm Damage Roof Repair', required: true },
+      { name: 'location', label: 'Location', type: 'select', options: LOCATIONS, required: true },
+      { name: 'keywords', label: 'Target Keywords', type: 'text', placeholder: 'storm damage repair, emergency roofing' },
+      { name: 'usp', label: 'Unique Selling Points', type: 'textarea', placeholder: 'What makes your service stand out...' },
+      { name: 'tone', label: 'Tone', type: 'select', options: TONES },
+    ],
+  },
+  {
+    value: 'gbp',
+    label: 'Google Business Post',
+    systemContext: 'Write a Google Business Profile post for a roofing company. Keep it under 300 words. Include a hook, value proposition, and clear CTA with a sense of urgency. Use emojis sparingly. Make it scannable.',
+    fields: [
+      { name: 'topic', label: 'Post Topic', type: 'text', placeholder: 'e.g. Spring roof inspection special', required: true },
+      { name: 'location', label: 'Location', type: 'select', options: LOCATIONS, required: true },
+      { name: 'offer', label: 'Offer / CTA', type: 'text', placeholder: 'e.g. Free inspection, 10% off' },
+      { name: 'tone', label: 'Tone', type: 'select', options: TONES },
+    ],
+  },
+  {
+    value: 'social',
+    label: 'Social Caption',
+    systemContext: 'Write social media captions for a roofing company. Provide versions for Facebook, Instagram, and LinkedIn. Include relevant hashtags. Keep each platform-appropriate in length and style. Make them engaging and shareable.',
+    fields: [
+      { name: 'topic', label: 'Post Topic', type: 'text', placeholder: 'e.g. Before/after roof transformation', required: true },
+      { name: 'location', label: 'Location', type: 'select', options: LOCATIONS },
+      { name: 'platform', label: 'Platform Focus', type: 'select', options: ['All Platforms', 'Facebook', 'Instagram', 'LinkedIn'] },
+      { name: 'tone', label: 'Tone', type: 'select', options: TONES },
+      { name: 'notes', label: 'Context', type: 'textarea', placeholder: 'Describe the photo/video or situation...' },
+    ],
+  },
 ];
 
-const typeIcon: Record<string, any> = { video: Film, photo: Image, post: FileText, 'ad-creative': Palette };
+async function generateContent(
+  tabConfig: TabConfig,
+  formData: Record<string, string>,
+  onDelta: (text: string) => void,
+  onDone: () => void,
+) {
+  const fieldSummary = tabConfig.fields
+    .filter(f => formData[f.name]?.trim())
+    .map(f => `${f.label}: ${formData[f.name]}`)
+    .join('\n');
 
-export default function ContentStudio() {
-  const { data: contentAssets, isLoading } = useContentAssets();
-  const [view, setView] = useState<'board' | 'performance' | 'checklist'>('board');
+  const userPrompt = `Generate content with these details:\n${fieldSummary}`;
 
-  if (isLoading || !contentAssets) return <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>;
+  const resp = await fetch(CHAT_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+    },
+    body: JSON.stringify({
+      messages: [
+        { role: 'user', content: `${tabConfig.systemContext}\n\n${userPrompt}` },
+      ],
+    }),
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text();
+    let msg = 'Generation failed';
+    try { msg = JSON.parse(body).error || msg; } catch {}
+    toast.error(msg);
+    throw new Error(msg);
+  }
+
+  if (!resp.body) throw new Error('No response body');
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+
+    let idx: number;
+    while ((idx = buf.indexOf('\n')) !== -1) {
+      let line = buf.slice(0, idx);
+      buf = buf.slice(idx + 1);
+      if (line.endsWith('\r')) line = line.slice(0, -1);
+      if (!line.startsWith('data: ') || line.startsWith(':') || line.startsWith('event:')) continue;
+      const json = line.slice(6).trim();
+      if (json === '[DONE]') break;
+      try {
+        const p = JSON.parse(json);
+        if (p.type === 'content_block_delta' && p.delta?.text) onDelta(p.delta.text);
+        if (p.choices?.[0]?.delta?.content) onDelta(p.choices[0].delta.content);
+      } catch {
+        buf = line + '\n' + buf;
+        break;
+      }
+    }
+  }
+  onDone();
+}
+
+function ContentGenerator({ tab }: { tab: TabConfig }) {
+  const [form, setForm] = useState<Record<string, string>>({});
+  const [output, setOutput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const outputRef = useRef<HTMLDivElement>(null);
+
+  const updateField = (name: string, value: string) => setForm(f => ({ ...f, [name]: value }));
+
+  const generate = async () => {
+    const missing = tab.fields.filter(f => f.required && !form[f.name]?.trim());
+    if (missing.length) {
+      toast.error(`Please fill in: ${missing.map(f => f.label).join(', ')}`);
+      return;
+    }
+    setOutput('');
+    setLoading(true);
+    let full = '';
+    try {
+      await generateContent(tab, form, chunk => {
+        full += chunk;
+        setOutput(full);
+      }, () => setLoading(false));
+    } catch {
+      setLoading(false);
+      if (!full) setOutput('Error generating content. Please try again.');
+    }
+  };
+
+  const copyOutput = () => {
+    navigator.clipboard.writeText(output);
+    toast.success('Copied to clipboard');
+  };
+
+  const saveAsBrief = async () => {
+    if (!output) return;
+    setSaving(true);
+    const title = `${tab.label}: ${form[tab.fields[0].name] || 'Untitled'}`;
+    const messages = [
+      { role: 'user', content: tab.fields.filter(f => form[f.name]?.trim()).map(f => `**${f.label}:** ${form[f.name]}`).join('\n') },
+      { role: 'assistant', content: output },
+    ];
+    const { error } = await supabase.from('seo_briefs').insert({
+      title,
+      category: tab.value,
+      messages: JSON.parse(JSON.stringify(messages)),
+    });
+    setSaving(false);
+    if (error) { toast.error('Save failed'); return; }
+    toast.success('Saved to SEO Briefs');
+  };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold">Content Studio</h2>
-        <div className="flex gap-1">
-          {(['board', 'performance', 'checklist'] as const).map(v => (
-            <button key={v} onClick={() => setView(v)}
-              className={`px-3 py-1.5 text-xs rounded font-medium transition-colors ${view === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'}`}>
-              {v === 'board' ? 'Kanban' : v === 'performance' ? 'Performance' : 'Shoot Checklist'}
-            </button>
-          ))}
-        </div>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[calc(100vh-12rem)]">
+      {/* Form */}
+      <div className="space-y-3">
+        {tab.fields.map(field => (
+          <div key={field.name} className="grid gap-1.5">
+            <Label className="text-xs">
+              {field.label}
+              {field.required && <span className="text-destructive ml-0.5">*</span>}
+            </Label>
+            {field.type === 'text' && (
+              <Input
+                value={form[field.name] || ''}
+                onChange={e => updateField(field.name, e.target.value)}
+                placeholder={field.placeholder}
+                className="text-sm"
+              />
+            )}
+            {field.type === 'textarea' && (
+              <Textarea
+                value={form[field.name] || ''}
+                onChange={e => updateField(field.name, e.target.value)}
+                placeholder={field.placeholder}
+                rows={3}
+                className="text-sm resize-none"
+              />
+            )}
+            {field.type === 'select' && (
+              <Select value={form[field.name] || ''} onValueChange={v => updateField(field.name, v)}>
+                <SelectTrigger className="text-sm"><SelectValue placeholder="Select…" /></SelectTrigger>
+                <SelectContent>
+                  {field.options?.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        ))}
+        <Button onClick={generate} disabled={loading} className="w-full gap-2 mt-2">
+          {loading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+          {loading ? 'Generating…' : 'Generate with Claude'}
+        </Button>
       </div>
 
-      {view === 'board' && (
-        <div className="flex gap-3 overflow-x-auto pb-4">
-          {statusCols.map(col => {
-            const items = contentAssets.filter(a => a.status === col.key);
-            return (
-              <div key={col.key} className={`min-w-[220px] flex-1 bg-card rounded-lg border-t-2 ${col.color} border border-border`}>
-                <div className="p-3 border-b border-border flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wider">{col.label}</span>
-                  <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">{items.length}</span>
-                </div>
-                <div className="p-2 space-y-2 max-h-[60vh] overflow-y-auto">
-                  {items.map(item => {
-                    const Icon = typeIcon[item.type] || FileText;
-                    return (
-                      <div key={item.id} className="bg-secondary/50 rounded p-2.5 border border-border/50 hover:border-primary/30 transition-colors">
-                        <div className="flex items-start gap-2">
-                          <Icon size={13} className="text-muted-foreground mt-0.5 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-xs font-medium truncate">{item.title}</p>
-                            <p className="text-[10px] text-muted-foreground mt-0.5">{item.owner} · Due {item.due_date}</p>
-                            <div className="flex gap-1 mt-1.5 flex-wrap">
-                              {item.channels.map(ch => (
-                                <span key={ch} className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground">{ch}</span>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {items.length === 0 && <p className="text-[10px] text-muted-foreground text-center py-4">No items</p>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {view === 'performance' && (
-        <div className="bg-card rounded-lg border border-border p-4">
-          <h3 className="text-sm font-semibold mb-3">Published Content Performance</h3>
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border text-muted-foreground uppercase tracking-wider text-[10px]">
-                <th className="text-left py-2 px-2">Title</th>
-                <th className="text-left py-2 px-2">Type</th>
-                <th className="text-left py-2 px-2">Published</th>
-                <th className="text-left py-2 px-2">Channels</th>
-                <th className="text-right py-2 px-2"><Eye size={10} className="inline" /> Views</th>
-                <th className="text-right py-2 px-2"><MousePointerClick size={10} className="inline" /> Clicks</th>
-                <th className="text-right py-2 px-2"><Users size={10} className="inline" /> Leads</th>
-              </tr>
-            </thead>
-            <tbody>
-              {contentAssets.filter(a => a.status === 'published' && a.performance).map(a => (
-                <tr key={a.id} className="border-b border-border/50 hover:bg-muted/30">
-                  <td className="py-1.5 px-2 font-medium">{a.title}</td>
-                  <td className="py-1.5 px-2 text-muted-foreground">{a.type}</td>
-                  <td className="py-1.5 px-2">{a.publish_date}</td>
-                  <td className="py-1.5 px-2">{a.channels.join(', ')}</td>
-                  <td className="text-right py-1.5 px-2">{a.performance!.views.toLocaleString()}</td>
-                  <td className="text-right py-1.5 px-2">{a.performance!.clicks.toLocaleString()}</td>
-                  <td className="text-right py-1.5 px-2 font-medium">{a.performance!.leads}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {view === 'checklist' && (
-        <div className="bg-card rounded-lg border border-border p-5 max-w-2xl">
-          <h3 className="text-sm font-semibold mb-4">🎬 Shoot Day Checklist</h3>
-          {[
-            { cat: 'B-Roll List', items: ['Crew arriving on site', 'Roof tear-off close-up', 'Material staging area', 'Installation progress shots', 'Final completed roof (multiple angles)', 'Drone flyover of completed work', 'Neighborhood establishing shot'] },
-            { cat: 'Customer Testimonials', items: ['Pre-interview: homeowner story & pain points', 'During: reaction to progress', 'Post: satisfaction & recommendation quote', 'Sign release form'] },
-            { cat: 'Before/After Shots', items: ['Wide angle before (same position)', 'Detail shots of damage', 'Wide angle after (exact same position)', 'Detail shots of new materials'] },
-            { cat: 'Team Intros', items: ['Project manager intro & role', 'Lead installer intro', 'Company values soundbite'] },
-            { cat: 'Community Giveback', items: ['Veterans appreciation content', 'Pet safety during roofing tips', 'Kids safety zone walkthrough', 'Neighborhood cleanup shots'] },
-          ].map(section => (
-            <div key={section.cat} className="mb-4">
-              <h4 className="text-xs font-semibold text-primary mb-2">{section.cat}</h4>
-              <div className="space-y-1">
-                {section.items.map(item => (
-                  <label key={item} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground cursor-pointer">
-                    <input type="checkbox" className="rounded border-border bg-secondary" />
-                    {item}
-                  </label>
-                ))}
-              </div>
+      {/* Output */}
+      <div className="flex flex-col border border-border rounded-lg bg-card overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
+          <span className="text-xs font-medium text-muted-foreground">Generated Content</span>
+          {output && (
+            <div className="flex gap-1">
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={copyOutput}>
+                <Copy size={11} /> Copy
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={saveAsBrief} disabled={saving}>
+                {saving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Save
+              </Button>
             </div>
-          ))}
+          )}
         </div>
-      )}
+        <ScrollArea className="flex-1 p-4" ref={outputRef}>
+          {!output && !loading && (
+            <p className="text-xs text-muted-foreground text-center py-12">
+              Fill in the form and click Generate to create content
+            </p>
+          )}
+          {(output || loading) && (
+            <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+              <ReactMarkdown>{output}</ReactMarkdown>
+              {loading && !output && (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Loader2 size={14} className="animate-spin" /> Generating…
+                </div>
+              )}
+            </div>
+          )}
+        </ScrollArea>
+      </div>
+    </div>
+  );
+}
+
+export default function ContentStudio() {
+  const [activeTab, setActiveTab] = useState('blog');
+
+  return (
+    <div>
+      <div className="mb-3">
+        <h1 className="text-lg font-semibold">Content Studio</h1>
+        <p className="text-xs text-muted-foreground">AI-powered content generation for All American Roof Pros</p>
+      </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="mb-3">
+          {CONTENT_TABS.map(t => (
+            <TabsTrigger key={t.value} value={t.value} className="text-xs">
+              {t.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        {CONTENT_TABS.map(t => (
+          <TabsContent key={t.value} value={t.value}>
+            <ContentGenerator tab={t} />
+          </TabsContent>
+        ))}
+      </Tabs>
     </div>
   );
 }
