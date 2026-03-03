@@ -1,80 +1,167 @@
-import { useState } from 'react';
-import { useFilter } from '@/contexts/FilterContext';
-import { useAssistantContext } from '@/hooks/useApi';
-import { fmt$, fmtN, fmtP } from '@/lib/format';
-import { Bot, Send, Lightbulb, ArrowRight } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useRef, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Send, Loader2, Trash2, Save, Bot } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
-const suggestions = [
-  "What's our best ROAS channel this month?",
-  "Why did CPL rise last 7 days?",
-  "What should we cut or scale next week?",
-  "Give me a weekly recap to send the team.",
-  "Build a web agenda for next week focused on Mansfield retail.",
+const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/seo-chat`;
+
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+const SUGGESTIONS = [
+  "What's the best marketing strategy for roofing in spring?",
+  "Write a follow-up email for a homeowner who got a free estimate.",
+  "How should we respond to a negative Google review?",
+  "Give me a weekly recap template for the sales team.",
+  "What Facebook ad angles work best for storm damage?",
+  "Create a script for our ISRs to book more appointments.",
 ];
 
+async function streamChat({
+  messages,
+  onDelta,
+  onDone,
+}: {
+  messages: Message[];
+  onDelta: (text: string) => void;
+  onDone: () => void;
+}) {
+  const resp = await fetch(CHAT_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+    },
+    body: JSON.stringify({ messages }),
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text();
+    let msg = 'Failed to get response';
+    try { msg = JSON.parse(body).error || msg; } catch {}
+    if (resp.status === 429) toast.error('Rate limit exceeded. Please wait a moment.');
+    else if (resp.status === 402) toast.error('AI credits exhausted.');
+    else toast.error(msg);
+    throw new Error(msg);
+  }
+
+  if (!resp.body) throw new Error('No response body');
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buf.indexOf('\n')) !== -1) {
+      let line = buf.slice(0, idx);
+      buf = buf.slice(idx + 1);
+      if (line.endsWith('\r')) line = line.slice(0, -1);
+      if (!line.startsWith('data: ') || line.startsWith(':') || line.startsWith('event:')) continue;
+      const json = line.slice(6).trim();
+      if (json === '[DONE]') break;
+      try {
+        const p = JSON.parse(json);
+        if (p.type === 'content_block_delta' && p.delta?.text) onDelta(p.delta.text);
+        if (p.choices?.[0]?.delta?.content) onDelta(p.choices[0].delta.content);
+      } catch {
+        buf = line + '\n' + buf;
+        break;
+      }
+    }
+  }
+  onDone();
+}
+
 export default function AssistantPage() {
-  const { startDate, endDate, locations } = useFilter();
-  const navigate = useNavigate();
-  const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; text: string }[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
 
-  const { data: ctx, isLoading } = useAssistantContext({ startDate, endDate, locations });
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
-  if (isLoading || !ctx) return <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>;
-
-  const { kpis, unmappedCount, wonDealsCount } = ctx;
-
-  const generateResponse = (q: string): string => {
-    const ql = q.toLowerCase();
-    if (ql.includes('roas') || ql.includes('best channel')) {
-      return `📊 **Best ROAS Channel (${startDate} to ${endDate})**\n\nGoogle Search is your top performer with approximately ${kpis.roas.toFixed(1)}x ROAS overall. With ${fmt$(kpis.spend)} total spend generating ${fmt$(kpis.revenue)} revenue across ${kpis.dealsWon} won deals.\n\n**Recommendation:** Consider increasing Google Search budget by 15-20% while maintaining current CPL targets.`;
-    }
-    if (ql.includes('cpl') || ql.includes('cost per lead')) {
-      return `📈 **CPL Analysis**\n\nCurrent CPL: ${fmt$(kpis.cpl)} across ${fmtN(kpis.leads)} leads.\n\nCPL has been ${kpis.cpl > 80 ? 'elevated' : 'within target range'}. Key factors:\n- ${ctx.totalSpendEntries} spend entries in period\n- ${unmappedCount} unmapped leads (fix tracking!)\n- Meta ads showing higher CPL than Google\n\n**Action:** Review Facebook campaign targeting and pause underperforming ad sets.`;
-    }
-    if (ql.includes('cut') || ql.includes('scale')) {
-      return `⚡ **Scale & Cut Recommendations**\n\n🟢 **Scale:** Google Search PPC — strong ROAS, proven conversion\n🟢 **Scale:** Referral program — lowest CPL, high close rate\n🔴 **Cut/Pause:** Any campaign with <1.5x ROAS after 30 days\n🟡 **Watch:** Direct mail — evaluate Feb EDDM results before next drop\n\nTotal spend: ${fmt$(kpis.spend)} | Revenue: ${fmt$(kpis.revenue)} | GP Est: ${fmt$(kpis.grossProfit)}`;
-    }
-    if (ql.includes('recap') || ql.includes('weekly')) {
-      return `📋 **Weekly Marketing Recap**\n\n**Period:** ${startDate} to ${endDate}\n\n| Metric | Value |\n|--------|-------|\n| Spend | ${fmt$(kpis.spend)} |\n| Leads | ${fmtN(kpis.leads)} |\n| CPL | ${fmt$(kpis.cpl)} |\n| Appointments | ${fmtN(kpis.appointments)} |\n| Deals Won | ${fmtN(kpis.dealsWon)} |\n| Revenue | ${fmt$(kpis.revenue)} |\n| ROAS | ${kpis.roas.toFixed(1)}x |\n| Close Rate | ${fmtP(kpis.closeRate)} |\n\n**Key Wins:** ${wonDealsCount} deals closed for ${fmt$(kpis.revenue)}\n**Watch:** ${unmappedCount} unmapped leads need attribution`;
-    }
-    if (ql.includes('agenda') || ql.includes('mansfield')) {
-      return `📅 **Proposed Web Agenda: Mansfield Retail Focus**\n\n**Theme:** Spring Roofing Season — Mansfield Blitz\n**Offer:** Free Estimate + $500 Off New Roof\n**Target:** Mansfield residential homeowners\n\n**Budget:**\n- Google Search: $2,500\n- Facebook: $1,200\n- Direct Mail (EDDM): $800\n- Yard Signs: $200\n\n**KPI Targets:** 35 leads | $75 CPL | $80K revenue\n\n**Talking Points:**\n1. Spring storm damage assessment\n2. Limited-time financing at 0%\n3. 5-star Google reviews\n4. Local veteran-owned business`;
-    }
-    return `Based on your current data (${startDate} to ${endDate}):\n\n- **${fmtN(kpis.leads)}** leads at **${fmt$(kpis.cpl)}** CPL\n- **${fmtN(kpis.dealsWon)}** deals won for **${fmt$(kpis.revenue)}**\n- ROAS: **${kpis.roas.toFixed(1)}x**\n- Close rate: **${fmtP(kpis.closeRate)}**\n\nCould you clarify what specific insight you're looking for? Try one of the suggested prompts for detailed analysis.`;
-  };
-
-  const send = (text: string) => {
-    if (!text.trim()) return;
-    const userMsg = { role: 'user' as const, text: text.trim() };
-    const response = { role: 'assistant' as const, text: generateResponse(text) };
-    setMessages(prev => [...prev, userMsg, response]);
+  const send = async (text?: string) => {
+    const userText = text || input.trim();
+    if (!userText || isLoading) return;
     setInput('');
+
+    const userMsg: Message = { role: 'user', content: userText };
+    const updated = [...messages, userMsg];
+    setMessages(updated);
+    setIsLoading(true);
+
+    let assistantSoFar = '';
+    const upsert = (chunk: string) => {
+      assistantSoFar += chunk;
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last?.role === 'assistant') {
+          return prev.map((m, i) => (i === prev.length - 1 ? { ...m, content: assistantSoFar } : m));
+        }
+        return [...prev, { role: 'assistant', content: assistantSoFar }];
+      });
+    };
+
+    try {
+      await streamChat({ messages: updated, onDelta: upsert, onDone: () => setIsLoading(false) });
+    } catch {
+      setIsLoading(false);
+      if (!assistantSoFar) {
+        setMessages(prev => [...prev, { role: 'assistant', content: 'Error connecting. Please try again.' }]);
+      }
+    }
   };
 
-  const recommendations = [
-    { label: 'Scale Winners', desc: 'Increase Google Search budget — best ROAS channel', color: 'text-status-green', link: '/performance' },
-    { label: 'Pause Losers', desc: `Review campaigns with <1.5x ROAS`, color: 'text-status-red', link: '/performance' },
-    { label: 'Fix Tracking', desc: `${unmappedCount} unmapped leads need source attribution`, color: 'text-status-yellow', link: '/sources?tab=unmapped' },
-    { label: 'Rep Coaching', desc: `Close rate at ${fmtP(kpis.closeRate)} — review bottom performers`, color: 'text-primary', link: '/pipeline?tab=deals' },
-  ];
+  const saveConversation = async () => {
+    if (messages.length === 0) return;
+    setSaving(true);
+    const firstUser = messages.find(m => m.role === 'user');
+    const title = firstUser ? firstUser.content.slice(0, 60) : 'Untitled';
+    const { error } = await supabase.from('seo_briefs').insert({
+      title: `Assistant: ${title}`,
+      category: 'assistant',
+      messages: JSON.parse(JSON.stringify(messages)),
+    });
+    setSaving(false);
+    if (error) { toast.error('Save failed'); return; }
+    toast.success('Conversation saved to Briefs');
+  };
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-bold">AI Assistant</h2>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <div className="lg:col-span-2 bg-card rounded-lg border border-border flex flex-col" style={{ height: '70vh' }}>
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+    <div>
+      <div className="mb-3">
+        <h1 className="text-lg font-semibold">AI Assistant</h1>
+        <p className="text-xs text-muted-foreground">Claude-powered marketing assistant for All American Roof Pros</p>
+      </div>
+
+      <div className="flex flex-col h-[calc(100vh-11rem)] bg-card rounded-lg border border-border">
+        {/* Messages */}
+        <ScrollArea className="flex-1 p-4">
+          <div className="space-y-4">
             {messages.length === 0 && (
               <div className="text-center py-10">
                 <Bot size={36} className="text-primary/30 mx-auto mb-3" />
-                <p className="text-sm font-medium">Marketing AI Copilot</p>
-                <p className="text-xs text-muted-foreground mt-1">Ask me anything about your marketing performance</p>
-                <div className="mt-4 space-y-2">
-                  {suggestions.map(s => (
-                    <button key={s} onClick={() => send(s)}
-                      className="block w-full max-w-md mx-auto text-left px-3 py-2 text-xs rounded border border-border hover:border-primary/30 hover:bg-secondary/50 transition-colors text-muted-foreground">
+                <p className="text-sm font-medium">Marketing AI Assistant</p>
+                <p className="text-xs text-muted-foreground mt-1 mb-4">Ask me anything about marketing, sales scripts, ad copy, or strategy</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-xl mx-auto">
+                  {SUGGESTIONS.map(s => (
+                    <button
+                      key={s}
+                      onClick={() => send(s)}
+                      className="text-left px-3 py-2 text-xs rounded border border-border hover:border-primary/30 hover:bg-secondary/50 transition-colors text-muted-foreground"
+                    >
                       "{s}"
                     </button>
                   ))}
@@ -83,40 +170,74 @@ export default function AssistantPage() {
             )}
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[80%] rounded-lg px-3 py-2 text-xs whitespace-pre-wrap ${m.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-secondary-foreground'}`}>
-                  {m.text}
+                <div
+                  className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                    m.role === 'user'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {m.role === 'user' ? (
+                    <span>{m.content}</span>
+                  ) : (
+                    <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                      <ReactMarkdown>{m.content}</ReactMarkdown>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
+            {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
+              <div className="flex justify-start">
+                <div className="bg-muted rounded-lg px-3 py-2">
+                  <Loader2 size={14} className="animate-spin text-muted-foreground" />
+                </div>
+              </div>
+            )}
+            <div ref={endRef} />
           </div>
-          <div className="border-t border-border p-3 flex gap-2">
-            <input
+        </ScrollArea>
+
+        {/* Input */}
+        <div className="border-t border-border p-3 space-y-1.5">
+          <div className="flex items-center gap-2">
+            {messages.length > 0 && (
+              <>
+                <button
+                  onClick={() => setMessages([])}
+                  className="text-[10px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+                >
+                  <Trash2 size={10} /> Clear
+                </button>
+                <button
+                  onClick={saveConversation}
+                  disabled={saving}
+                  className="text-[10px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+                >
+                  {saving ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />} Save conversation
+                </button>
+              </>
+            )}
+          </div>
+          <div className="flex gap-2 items-end">
+            <Textarea
+              placeholder="Ask about marketing, sales, ad copy, strategy…"
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && send(input)}
-              placeholder="Ask about your marketing data..."
-              className="flex-1 bg-secondary border border-border rounded px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
+              rows={2}
+              className="flex-1 text-xs resize-none min-h-0"
             />
-            <button onClick={() => send(input)} className="bg-primary text-primary-foreground px-3 py-2 rounded hover:bg-primary/90 transition-colors">
-              <Send size={14} />
-            </button>
+            <Button size="icon" onClick={() => send()} disabled={isLoading || !input.trim()}>
+              {isLoading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+            </Button>
           </div>
-        </div>
-        <div className="space-y-3">
-          <div className="bg-card rounded-lg border border-border p-4">
-            <h3 className="text-xs font-semibold mb-3 flex items-center gap-1.5"><Lightbulb size={13} className="text-accent" /> Action Recommendations</h3>
-            <div className="space-y-2.5">
-              {recommendations.map(r => (
-                <button key={r.label} onClick={() => navigate(r.link)} className="flex items-start gap-2 text-left w-full hover:bg-muted/30 rounded p-1 -m-1 transition-colors">
-                  <ArrowRight size={12} className={`${r.color} mt-0.5 shrink-0`} />
-                  <div>
-                    <p className="text-xs font-medium">{r.label}</p>
-                    <p className="text-[10px] text-muted-foreground">{r.desc}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
+          <p className="text-[9px] text-muted-foreground">SHIFT+ENTER for new line · ENTER to send</p>
         </div>
       </div>
     </div>
